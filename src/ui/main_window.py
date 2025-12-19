@@ -602,17 +602,17 @@ class MainWindow(QMainWindow):
         try:
             project_manager = resolve.GetProjectManager()
             project = project_manager.GetCurrentProject()
-            
+
             if not project:
                 QMessageBox.warning(self, "경고", "DaVinci Resolve에서 프로젝트를 먼저 열어주세요.")
                 return
-            
+
             media_pool = project.GetMediaPool()
             root_folder = media_pool.GetRootFolder()
             fps = float(project.GetSetting("timelineFrameRate") or 24)
-            
+
             debug_log = []
-            
+
             # === 1. 영상 파일 임포트 ===
             video_clip = None
             if video_file and os.path.exists(video_file):
@@ -621,7 +621,7 @@ class MainWindow(QMainWindow):
                 if video_clips:
                     video_clip = video_clips[0]
                     debug_log.append(f"영상 임포트 OK: {video_clip.GetName()}")
-            
+
             # === 2. AD_Audio 폴더에 WAV 임포트 ===
             ad_folder = None
             for subfolder in root_folder.GetSubFolderList():
@@ -630,22 +630,16 @@ class MainWindow(QMainWindow):
                     break
             if not ad_folder:
                 ad_folder = media_pool.AddSubFolder(root_folder, "AD_Audio")
-            
+
             media_pool.SetCurrentFolder(ad_folder)
             wav_paths = [os.path.join(wav_folder, f) for f in sorted(wav_files)]
             wav_clips = media_pool.ImportMedia(wav_paths)
             debug_log.append(f"WAV 임포트: {len(wav_clips) if wav_clips else 0}개")
-            
-            # === 3. SRT 파일 임포트 ===
-            media_pool.SetCurrentFolder(root_folder)
-            if srt_file and os.path.exists(srt_file):
-                media_pool.ImportMedia([srt_file])
-                debug_log.append("SRT 임포트 OK")
-            
-            # === 4. 타임라인 생성 ===
+
+            # === 3. 타임라인 생성 ===
             timeline = None
             timeline_name = "AD_" + os.path.basename(self.output_folder)
-            
+
             # 방법 1: 영상 클립으로 타임라인 생성
             if video_clip:
                 try:
@@ -653,12 +647,12 @@ class MainWindow(QMainWindow):
                     debug_log.append(f"CreateTimelineFromClips: {timeline is not None}")
                 except Exception as e:
                     debug_log.append(f"CreateTimelineFromClips 실패: {e}")
-            
+
             # 방법 2: 빈 타임라인 후 영상 추가
             if not timeline:
                 timeline = media_pool.CreateEmptyTimeline(timeline_name)
                 debug_log.append(f"CreateEmptyTimeline: {timeline is not None}")
-                
+
                 if timeline and video_clip:
                     project.SetCurrentTimeline(timeline)
                     try:
@@ -666,67 +660,134 @@ class MainWindow(QMainWindow):
                         debug_log.append(f"AppendToTimeline(video): {bool(result)}")
                     except Exception as e:
                         debug_log.append(f"AppendToTimeline 실패: {e}")
-            
+
             if not timeline:
                 QMessageBox.warning(self, "경고", f"타임라인 생성 실패\n\n{chr(10).join(debug_log)}")
                 return
-            
+
             project.SetCurrentTimeline(timeline)
-            
-            # === 5. 오디오 트랙 추가 ===
+
+            # === 4. AD용 오디오 트랙 추가 ===
+            # 기존 오디오 트랙 수 확인
+            existing_audio_tracks = timeline.GetTrackCount("audio")
+            debug_log.append(f"기존 오디오 트랙: {existing_audio_tracks}개")
+
+            # AD용 오디오 트랙 추가 (A2 또는 그 이상)
+            ad_audio_track = existing_audio_tracks + 1
             try:
                 track_result = timeline.AddTrack("audio")
                 debug_log.append(f"AddTrack(audio): {track_result}")
+                if track_result:
+                    # 트랙 이름 설정 시도
+                    try:
+                        timeline.SetTrackName("audio", ad_audio_track, "AD_Audio")
+                    except:
+                        pass
             except Exception as e:
                 debug_log.append(f"AddTrack 실패: {e}")
-            
-            # === 6. WAV 파일 배치 ===
+                ad_audio_track = existing_audio_tracks  # 기존 마지막 트랙 사용
+
+            # === 5. WAV 파일을 AD 오디오 트랙에 배치 ===
             wav_placed = 0
             if wav_clips:
                 sorted_files = sorted(wav_files)
-                for i, filename in enumerate(sorted_files):
-                    if i >= len(wav_clips):
-                        break
-                    clip = wav_clips[i]
-                    
-                    parts = filename.split('_')
-                    if len(parts) >= 2:
-                        tc_part = parts[1]
-                        tc_parts = tc_part.split('-')
-                        if len(tc_parts) == 4:
-                            try:
-                                h, m, s, f = int(tc_parts[0]), int(tc_parts[1]), int(tc_parts[2]), int(tc_parts[3])
-                                record_frame = int((h * 3600 + m * 60 + s) * fps + f)
-                                
-                                # 시도 1: recordFrame으로 배치
-                                result = media_pool.AppendToTimeline([{"mediaPoolItem": clip, "recordFrame": record_frame}])
-                                if result:
+
+                # 파일명-클립 매핑 생성
+                clip_map = {}
+                for clip in wav_clips:
+                    clip_name = clip.GetName()
+                    clip_map[clip_name] = clip
+
+                for filename in sorted_files:
+                    clip = clip_map.get(filename)
+                    if not clip:
+                        continue
+
+                    # 파일명에서 타임코드 추출 (00_00_05_12.wav 형식)
+                    basename = os.path.splitext(filename)[0]
+                    tc_parts = basename.split('_')
+
+                    if len(tc_parts) >= 4:
+                        try:
+                            h = int(tc_parts[0])
+                            m = int(tc_parts[1])
+                            s = int(tc_parts[2])
+                            f = int(tc_parts[3])
+                            record_frame = int((h * 3600 + m * 60 + s) * fps + f)
+
+                            # 클립 duration 가져오기
+                            clip_props = clip.GetClipProperty()
+
+                            # 방법 1: trackIndex와 recordFrame으로 배치
+                            clip_info = {
+                                "mediaPoolItem": clip,
+                                "trackIndex": ad_audio_track,
+                                "recordFrame": record_frame
+                            }
+                            result = media_pool.AppendToTimeline([clip_info])
+
+                            if result:
+                                wav_placed += 1
+                                debug_log.append(f"  배치 OK: {filename} @ frame {record_frame}")
+                            else:
+                                # 방법 2: 기본 AppendToTimeline 후 이동 시도
+                                result2 = media_pool.AppendToTimeline([clip])
+                                if result2:
                                     wav_placed += 1
-                            except:
-                                pass
-                
-                debug_log.append(f"WAV 배치: {wav_placed}/{len(wav_clips)}")
-            
-            # === 7. 자막 임포트 ===
+                                    debug_log.append(f"  배치(기본): {filename}")
+                        except Exception as e:
+                            debug_log.append(f"  배치 실패: {filename} - {e}")
+
+                debug_log.append(f"WAV 배치 결과: {wav_placed}/{len(wav_clips)}개")
+
+            # === 6. 자막(SRT) 파일 임포트 ===
             srt_imported = False
             if srt_file and os.path.exists(srt_file):
+                # 방법 1: ImportSubtitleTrack (DaVinci Resolve 18+)
+                try:
+                    # 먼저 자막 트랙 추가 시도
+                    timeline.AddTrack("subtitle")
+                except:
+                    pass
+
                 try:
                     result = timeline.ImportSubtitleTrack(srt_file)
                     srt_imported = bool(result)
                     debug_log.append(f"ImportSubtitleTrack: {srt_imported}")
                 except Exception as e:
                     debug_log.append(f"ImportSubtitleTrack 실패: {e}")
-            
-            # === 8. 결과 ===
+
+                # 방법 2: Media Pool에 SRT 추가 (폴백)
+                if not srt_imported:
+                    try:
+                        media_pool.SetCurrentFolder(root_folder)
+                        srt_clips = media_pool.ImportMedia([srt_file])
+                        if srt_clips:
+                            debug_log.append("SRT를 Media Pool에 임포트 (수동 배치 필요)")
+                    except Exception as e:
+                        debug_log.append(f"SRT Media Pool 임포트 실패: {e}")
+
+            # === 7. 결과 ===
             track_v = timeline.GetTrackCount("video")
             track_a = timeline.GetTrackCount("audio")
-            
-            msg = f"타임라인: {timeline.GetName()}\n"
-            msg += f"트랙: V{track_v} + A{track_a}\n\n"
-            msg += f"[디버그]\n" + "\n".join(debug_log)
-            
+            track_s = 0
+            try:
+                track_s = timeline.GetTrackCount("subtitle")
+            except:
+                pass
+
+            msg = f"✅ 타임라인: {timeline.GetName()}\n"
+            msg += f"📊 트랙: V{track_v} + A{track_a}"
+            if track_s:
+                msg += f" + S{track_s}"
+            msg += f"\n\n"
+            msg += f"🎬 영상: {'배치됨' if video_clip else '없음'}\n"
+            msg += f"🔊 WAV: {wav_placed}/{len(wav_clips) if wav_clips else 0}개 배치\n"
+            msg += f"📝 자막: {'임포트됨' if srt_imported else '수동 배치 필요'}\n\n"
+            msg += f"[디버그]\n" + "\n".join(debug_log[-10:])  # 마지막 10개만
+
             QMessageBox.information(self, "DaVinci Resolve 임포트", msg)
-            
+
         except Exception as e:
             import traceback
             QMessageBox.critical(self, "오류", f"{str(e)}\n\n{traceback.format_exc()}")
