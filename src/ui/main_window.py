@@ -692,6 +692,19 @@ class MainWindow(QMainWindow):
             if wav_clips:
                 sorted_files = sorted(wav_files)
 
+                # 타임라인 시작 타임코드 가져오기 (예: 01:00:00:00)
+                timeline_start_frame = 0
+                try:
+                    start_tc = timeline.GetStartTimecode()
+                    if start_tc:
+                        tc_parts_start = start_tc.replace(';', ':').split(':')
+                        if len(tc_parts_start) == 4:
+                            sh, sm, ss, sf = map(int, tc_parts_start)
+                            timeline_start_frame = int((sh * 3600 + sm * 60 + ss) * fps + sf)
+                            debug_log.append(f"타임라인 시작: {start_tc} (frame {timeline_start_frame})")
+                except Exception as e:
+                    debug_log.append(f"타임라인 시작TC 가져오기 실패: {e}")
+
                 # 파일명-클립 매핑 생성
                 clip_map = {}
                 for clip in wav_clips:
@@ -713,10 +726,9 @@ class MainWindow(QMainWindow):
                             m = int(tc_parts[1])
                             s = int(tc_parts[2])
                             f = int(tc_parts[3])
-                            record_frame = int((h * 3600 + m * 60 + s) * fps + f)
-
-                            # 클립 duration 가져오기
-                            clip_props = clip.GetClipProperty()
+                            # 파일명 타임코드 + 타임라인 시작 오프셋
+                            clip_frame = int((h * 3600 + m * 60 + s) * fps + f)
+                            record_frame = timeline_start_frame + clip_frame
 
                             # 방법 1: trackIndex와 recordFrame으로 배치
                             clip_info = {
