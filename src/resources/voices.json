@@ -1,0 +1,111 @@
+{
+    "voices": {
+        "vdain": {
+            "name": "다인",
+            "gender": "여성",
+            "style": "차분한 톤",
+            "emotion": true,
+            "description": "AD 나레이션에 적합"
+        },
+        "vhyeri": {
+            "name": "혜리",
+            "gender": "여성",
+            "style": "밝은 톤",
+            "emotion": false,
+            "description": "밝고 경쾌한 느낌"
+        },
+        "vyuna": {
+            "name": "유나",
+            "gender": "여성",
+            "style": "또렷한 톤",
+            "emotion": true,
+            "description": "명확한 발음"
+        },
+        "vmijin": {
+            "name": "미진",
+            "gender": "여성",
+            "style": "부드러운 톤",
+            "emotion": false,
+            "description": "부드럽고 차분함"
+        },
+        "vdaeseong": {
+            "name": "대성",
+            "gender": "남성",
+            "style": "차분한 톤",
+            "emotion": false,
+            "description": "남성 나레이션"
+        },
+        "nara": {
+            "name": "나라",
+            "gender": "여성",
+            "style": "기본",
+            "emotion": false,
+            "description": "기본 여성 음성"
+        },
+        "nminsang": {
+            "name": "민상",
+            "gender": "남성",
+            "style": "기본",
+            "emotion": false,
+            "description": "기본 남성 음성"
+        },
+        "njihun": {
+            "name": "지훈",
+            "gender": "남성",
+            "style": "뉴스",
+            "emotion": false,
+            "description": "뉴스 앵커 스타일"
+        },
+        "njiyun": {
+            "name": "지윤",
+            "gender": "여성",
+            "style": "뉴스",
+            "emotion": false,
+            "description": "뉴스 앵커 스타일"
+        },
+        "nsujin": {
+            "name": "수진",
+            "gender": "여성",
+            "style": "밝은 톤",
+            "emotion": false,
+            "description": "밝은 여성 음성"
+        }
+    },
+    "options": {
+        "speed": {
+            "min": -5,
+            "max": 5,
+            "default": 0,
+            "description": "음성 속도 (-5: 느림 ~ +5: 빠름)"
+        },
+        "pitch": {
+            "min": -5,
+            "max": 5,
+            "default": 0,
+            "description": "음성 피치 (-5: 낮음 ~ +5: 높음)"
+        },
+        "volume": {
+            "min": -5,
+            "max": 5,
+            "default": 0,
+            "description": "음성 볼륨 (-5: 작음 ~ +5: 큼)"
+        },
+        "emotion": {
+            "options": {
+                "0": "중립",
+                "1": "슬픔",
+                "2": "기쁨"
+            },
+            "default": 0,
+            "description": "감정 설정 (지원 음성만)"
+        },
+        "emotion_strength": {
+            "min": 0,
+            "max": 2,
+            "default": 1,
+            "description": "감정 강도"
+        }
+    },
+    "frame_rates": [23.976, 24, 25, 29.97, 30],
+    "default_frame_rate": 24
+}
