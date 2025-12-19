@@ -758,58 +758,62 @@ class MainWindow(QMainWindow):
                 srt_abs_path = os.path.abspath(srt_file)
                 debug_log.append(f"SRT 파일: {srt_abs_path}")
 
-                # 방법 1: ImportSubtitleTrack (Resolve 18+, 파라미터 다양하게 시도)
-                import_methods = [
-                    ("ImportSubtitleTrack", [srt_abs_path]),
-                    ("ImportSubtitleTrack", [srt_abs_path, "ko"]),  # 한국어
-                    ("ImportSubtitleTrack", [srt_abs_path, "en"]),  # 영어
-                    ("ImportSubtitleTrack", [srt_abs_path, "ko", "UTF-8"]),
-                ]
+                # 방법 1: ImportIntoTimeline (Resolve 20에서 발견된 메서드)
+                try:
+                    import_method = getattr(timeline, 'ImportIntoTimeline', None)
+                    if import_method and callable(import_method):
+                        # 다양한 파라미터 조합 시도
+                        for args in [[srt_abs_path], [srt_abs_path, {}]]:
+                            try:
+                                result = import_method(*args)
+                                if result:
+                                    srt_imported = True
+                                    debug_log.append(f"ImportIntoTimeline 성공: {result}")
+                                    break
+                                else:
+                                    debug_log.append(f"ImportIntoTimeline{args}: 반환값 None/False")
+                            except Exception as e:
+                                debug_log.append(f"ImportIntoTimeline{args} 실패: {e}")
+                    else:
+                        debug_log.append("ImportIntoTimeline: 메서드 없음")
+                except Exception as e:
+                    debug_log.append(f"ImportIntoTimeline 예외: {e}")
 
-                for method_name, args in import_methods:
-                    if srt_imported:
-                        break
-                    try:
-                        method = getattr(timeline, method_name, None)
-                        if method and callable(method):
-                            result = method(*args)
-                            if result:
-                                srt_imported = True
-                                debug_log.append(f"{method_name}{args}: 성공")
-                                break
-                            else:
-                                debug_log.append(f"{method_name}: 반환값 None/False")
-                        else:
-                            debug_log.append(f"{method_name}: 메서드 없음")
-                    except Exception as e:
-                        debug_log.append(f"{method_name} 실패: {e}")
-
-                # 방법 2: 타임라인에서 사용 가능한 메서드 확인 (디버깅용)
-                if not srt_imported:
-                    try:
-                        timeline_methods = [m for m in dir(timeline) if 'ubtitle' in m.lower() or 'import' in m.lower()]
-                        if timeline_methods:
-                            debug_log.append(f"타임라인 자막 메서드: {timeline_methods}")
-                    except:
-                        pass
-
-                # 방법 3: Fusion 자막 또는 Text+ 사용 시도
-                if not srt_imported:
-                    try:
-                        # Edit 페이지의 Effects에서 Text+ 삽입 시도
-                        # 자막 트랙에 직접 추가하는 것은 API 제한이 있을 수 있음
-                        pass
-                    except:
-                        pass
-
-                # 방법 4: Media Pool에 SRT 추가 (폴백)
+                # 방법 2: Media Pool에 SRT 임포트 후 타임라인에 추가
                 if not srt_imported:
                     try:
                         media_pool.SetCurrentFolder(root_folder)
                         srt_clips = media_pool.ImportMedia([srt_abs_path])
-                        if srt_clips:
-                            debug_log.append("SRT → Media Pool 임포트 완료")
-                            debug_log.append("💡 자막 배치: Media Pool에서 SRT를 Subtitle 트랙으로 드래그")
+                        if srt_clips and len(srt_clips) > 0:
+                            srt_clip = srt_clips[0]
+                            debug_log.append(f"SRT Media Pool 임포트: {srt_clip.GetName()}")
+
+                            # SRT 클립을 타임라인에 추가 시도
+                            # 자막은 subtitle 트랙에 배치되어야 함
+                            try:
+                                # 자막 트랙 추가
+                                timeline.AddTrack("subtitle")
+                            except:
+                                pass
+
+                            # AppendToTimeline으로 자막 배치 시도
+                            try:
+                                srt_info = {
+                                    "mediaPoolItem": srt_clip,
+                                    "trackIndex": 1,
+                                    "mediaType": 2,  # 2 = audio/subtitle?
+                                }
+                                result = media_pool.AppendToTimeline([srt_info])
+                                if result:
+                                    srt_imported = True
+                                    debug_log.append("SRT AppendToTimeline 성공")
+                                else:
+                                    debug_log.append("SRT AppendToTimeline: 반환값 None/False")
+                            except Exception as e:
+                                debug_log.append(f"SRT AppendToTimeline 실패: {e}")
+
+                            if not srt_imported:
+                                debug_log.append("💡 자막: Media Pool에서 Subtitle 트랙으로 드래그")
                     except Exception as e:
                         debug_log.append(f"SRT Media Pool 임포트 실패: {e}")
 
