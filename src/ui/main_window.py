@@ -779,7 +779,7 @@ class MainWindow(QMainWindow):
                 except Exception as e:
                     debug_log.append(f"ImportIntoTimeline 예외: {e}")
 
-                # 방법 2: Media Pool에 SRT 임포트 후 타임라인에 추가
+                # 방법 2: Media Pool에 SRT 임포트 (자막 트랙 자동 배치는 API 미지원)
                 if not srt_imported:
                     try:
                         media_pool.SetCurrentFolder(root_folder)
@@ -787,33 +787,8 @@ class MainWindow(QMainWindow):
                         if srt_clips and len(srt_clips) > 0:
                             srt_clip = srt_clips[0]
                             debug_log.append(f"SRT Media Pool 임포트: {srt_clip.GetName()}")
-
-                            # SRT 클립을 타임라인에 추가 시도
-                            # 자막은 subtitle 트랙에 배치되어야 함
-                            try:
-                                # 자막 트랙 추가
-                                timeline.AddTrack("subtitle")
-                            except:
-                                pass
-
-                            # AppendToTimeline으로 자막 배치 시도
-                            try:
-                                srt_info = {
-                                    "mediaPoolItem": srt_clip,
-                                    "trackIndex": 1,
-                                    "mediaType": 2,  # 2 = audio/subtitle?
-                                }
-                                result = media_pool.AppendToTimeline([srt_info])
-                                if result:
-                                    srt_imported = True
-                                    debug_log.append("SRT AppendToTimeline 성공")
-                                else:
-                                    debug_log.append("SRT AppendToTimeline: 반환값 None/False")
-                            except Exception as e:
-                                debug_log.append(f"SRT AppendToTimeline 실패: {e}")
-
-                            if not srt_imported:
-                                debug_log.append("💡 자막: Media Pool에서 Subtitle 트랙으로 드래그")
+                            debug_log.append("💡 자막: Media Pool에서 Subtitle 트랙으로 드래그 필요")
+                            # srt_imported는 False 유지 (실제로 타임라인에 배치되지 않음)
                     except Exception as e:
                         debug_log.append(f"SRT Media Pool 임포트 실패: {e}")
 
@@ -833,7 +808,12 @@ class MainWindow(QMainWindow):
             msg += f"\n\n"
             msg += f"🎬 영상: {'배치됨' if video_clip else '없음'}\n"
             msg += f"🔊 WAV: {wav_placed}/{len(wav_clips) if wav_clips else 0}개 배치\n"
-            msg += f"📝 자막: {'임포트됨' if srt_imported else '수동 배치 필요'}\n\n"
+            if srt_imported:
+                msg += f"📝 자막: 타임라인 배치됨\n\n"
+            elif srt_file:
+                msg += f"📝 자막: Media Pool 임포트됨 (Subtitle 트랙으로 드래그 필요)\n\n"
+            else:
+                msg += f"📝 자막: 없음\n\n"
             msg += f"[디버그]\n" + "\n".join(debug_log[-10:])  # 마지막 10개만
 
             QMessageBox.information(self, "DaVinci Resolve 임포트", msg)
@@ -842,16 +822,7 @@ class MainWindow(QMainWindow):
             import traceback
             QMessageBox.critical(self, "오류", f"{str(e)}\n\n{traceback.format_exc()}")
             self._show_manual_import_guide(wav_folder, fcpxml_path, video_file, srt_file)
-    
-    def _place_wav_on_audio_track(self, media_pool, timeline, wav_clips, wav_files, fps):
-        """더 이상 사용하지 않음"""
-        pass
 
-    
-    def _place_wav_on_audio_track(self, media_pool, timeline, wav_clips, wav_files, fps):
-        """더 이상 사용하지 않음 - _import_to_resolve_full에 통합됨"""
-        pass
-    
     def _show_manual_import_guide(self, wav_folder, fcpxml_path, video_file, srt_file):
         """수동 임포트 가이드 표시"""
         guide_text = f"""DaVinci Resolve에서 AD 프로젝트를 설정하는 방법:
