@@ -212,12 +212,7 @@ class SRTSyncTab(QWidget):
         file_layout = QVBoxLayout(file_frame)
         file_layout.setContentsMargins(16, 16, 16, 16)
         file_layout.setSpacing(12)
-        
-        # 설명
-        desc_label = QLabel("SRT 파일의 종료 시간을 WAV 파일 길이에 맞게 동기화합니다.")
-        desc_label.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: {FONTS['size_sm']};")
-        file_layout.addWidget(desc_label)
-        
+
         # SRT 파일 선택 (드래그앤드롭 지원)
         srt_layout = QHBoxLayout()
         srt_layout.setSpacing(12)
@@ -266,10 +261,16 @@ class SRTSyncTab(QWidget):
         
         file_layout.addLayout(wav_layout)
         
-        # 분석 버튼
+        # 분석 버튼 행 (설명 텍스트 + 버튼)
         analyze_layout = QHBoxLayout()
+
+        # 설명 텍스트 (왼쪽)
+        desc_label = QLabel("SRT 파일의 종료 시간을 WAV 파일 길이에 맞게 동기화합니다.")
+        desc_label.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: {FONTS['size_sm']};")
+        analyze_layout.addWidget(desc_label)
+
         analyze_layout.addStretch()
-        
+
         self.btn_analyze = QPushButton("분석")
         self.btn_analyze.setStyleSheet(get_button_style('secondary'))
         self.btn_analyze.setFixedWidth(100)
@@ -280,20 +281,20 @@ class SRTSyncTab(QWidget):
         file_layout.addLayout(analyze_layout)
         
         layout.addWidget(file_frame)
-        
+
+        # 요약 정보 (테두리 없음)
+        self.label_summary = QLabel("")
+        self.label_summary.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: {FONTS['size_sm']};")
+        layout.addWidget(self.label_summary)
+
         # === 분석 결과 (접힘/펼침) ===
         self.result_section = CollapsibleSection("분석 결과", expanded=True)
-        
+
         result_widget = QWidget()
         result_layout = QVBoxLayout(result_widget)
         result_layout.setContentsMargins(0, 0, 0, 0)
         result_layout.setSpacing(8)
-        
-        # 요약 정보
-        self.label_summary = QLabel("")
-        self.label_summary.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: {FONTS['size_sm']};")
-        result_layout.addWidget(self.label_summary)
-        
+
         # 테이블
         self.table = QTableWidget()
         self.table.setColumnCount(6)
