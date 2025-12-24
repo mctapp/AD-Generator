@@ -143,6 +143,7 @@ class SRTBatchTab(QWidget):
         self.output_folder = None
         self.fps = 24
         self.output_format = 'fcpxml'
+        self.voice_settings = {}  # 음성 설정 (리포트용)
         self.last_failed_files = []
         self.current_srt_path = None
         self.setup_ui()
@@ -267,6 +268,7 @@ class SRTBatchTab(QWidget):
         self.output_format = fmt
     
     def set_voice_settings(self, settings: dict):
+        self.voice_settings = settings  # 저장 (리포트용)
         options = TTSOptions(**settings)
         self.tts_engine.set_options(options)
     
@@ -351,6 +353,7 @@ class SRTBatchTab(QWidget):
         
         # 오버랩 검사
         checker = OverlapChecker(self.fps)
+        checker.set_voice_settings(self.voice_settings)  # 음성 설정 전달
         checker.check(self.srt_parser.entries, wav_folder)
         
         for result in checker.results:
