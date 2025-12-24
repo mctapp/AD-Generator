@@ -208,45 +208,53 @@ class PDFParser:
             "underlined": has_underline
         }
     
-    def _assign_lines_to_timecodes(self, anchors: List[Dict], 
+    def _assign_lines_to_timecodes(self, anchors: List[Dict],
                                     lines: List[Dict],
                                     remove_slashes: bool,
                                     remove_periods: bool,
                                     include_brackets: bool) -> List[ScriptEntry]:
-        """각 라인을 해당 타임코드 영역에 할당"""
+        """각 라인을 해당 타임코드 영역에 할당 (페이지 걸침 지원)"""
         entries = []
-        
+
         for i, anchor in enumerate(anchors):
             tc = anchor["timecode"]
             tc_page = anchor["page"]
             tc_y = anchor["y"]
-            
-            # 다음 타임코드의 y좌표 (영역 끝)
-            if i + 1 < len(anchors) and anchors[i + 1]["page"] == tc_page:
+
+            # 다음 타임코드의 위치 (페이지, y좌표)
+            if i + 1 < len(anchors):
+                next_page = anchors[i + 1]["page"]
                 next_y = anchors[i + 1]["y"]
             else:
-                next_y = float('inf')  # 페이지 끝까지
-            
-            # 이 타임코드 영역의 라인들 수집
+                next_page = float('inf')
+                next_y = float('inf')
+
+            # 이 타임코드 영역의 라인들 수집 (페이지 걸침 지원)
             region_lines = []
             for line in lines:
-                if line["page"] != tc_page:
+                line_page = line["page"]
+                line_y = line["y"]
+
+                # 현재 타임코드 위치 이전이면 스킵
+                if (line_page, line_y) < (tc_page, tc_y - 5):
                     continue
-                
-                # y좌표가 현재 타임코드 ~ 다음 타임코드 범위
-                if tc_y - 5 <= line["y"] < next_y - 5:
-                    region_lines.append(line)
-            
+
+                # 다음 타임코드 위치 이후면 스킵
+                if (line_page, line_y) >= (next_page, next_y - 5):
+                    continue
+
+                region_lines.append(line)
+
             # 타임코드와 같은 라인에서 지시어 추출
             instructions = []
             script_texts = []
-            
+
             for line in region_lines:
                 text = line["text"]
-                
+
                 # 타임코드 자체 제거 (4-6자리)
                 text = re.sub(r'^\d{4,6}\s*', '', text)
-                
+
                 # 괄호 지시어 추출
                 bracket_match = re.match(r'\(([^)]+)\)\s*(.*)', text)
                 if bracket_match:
@@ -254,11 +262,11 @@ class PDFParser:
                     if not any(kw in instr for kw in self.SOUND_KEYWORDS):
                         instructions.append(instr)
                     text = bracket_match.group(2).strip()
-                
+
                 # 밑줄 텍스트만 스크립트로
                 if text and line["underlined"]:
                     script_texts.append(text)
-            
+
             # 엔트리 생성
             if script_texts:
                 entry = self._build_entry(
@@ -272,7 +280,7 @@ class PDFParser:
                 )
                 if entry:
                     entries.append(entry)
-        
+
         return entries
     
     def _build_entry(self, index: int, timecode_raw: str,
@@ -400,8 +408,9 @@ class PDFParser:
         """
         PDF에서 모든 밑줄 텍스트를 추출 (검증용)
 
-        페이지 경계와 타임코드에 관계없이 밑줄이 그어진 모든 텍스트를
-        순서대로 수집하여 반환합니다.
+        parse()와 동일한 라인 단위 로직 사용:
+        - 라인에 밑줄 단어가 하나라도 있으면 전체 라인 텍스트 포함
+        - 페이지 경계와 타임코드에 관계없이 모든 밑줄 라인 수집
 
         Args:
             pdf_path: PDF 파일 경로
@@ -441,17 +450,23 @@ class PDFParser:
 
         doc.close()
 
-        # 밑줄이 있는 단어만 수집 (페이지, y, x 순으로 정렬)
-        underlined_words = []
-        for w in all_words:
-            if self._is_underlined(w, all_underlines):
-                underlined_words.append(w)
+        # 라인 단위로 그룹화 (parse()와 동일한 로직)
+        lines = self._group_words_by_y(all_words, all_underlines)
 
-        # 순서대로 정렬
-        underlined_words.sort(key=lambda x: (x["page"], x["y0"], x["x0"]))
+        # 밑줄이 있는 라인의 텍스트만 수집
+        underlined_texts = []
+        for line in lines:
+            if line["underlined"]:
+                # 타임코드 제거 (4-6자리 숫자)
+                text = re.sub(r'^\d{4,6}\s*', '', line["text"])
+                # 괄호 지시어 제거
+                text = re.sub(r'\([^)]*\)\s*', '', text)
+                text = text.strip()
+                if text:
+                    underlined_texts.append(text)
 
         # 텍스트 합치기
-        all_text = " ".join(w["text"] for w in underlined_words)
+        all_text = " ".join(underlined_texts)
 
         # 연속 공백 제거
         all_text = re.sub(r'\s+', ' ', all_text).strip()
