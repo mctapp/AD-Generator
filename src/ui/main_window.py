@@ -28,47 +28,52 @@ class MainWindow(QMainWindow):
         self.load_config()
         self.connect_signals()
     
+    # 앱 정보
+    APP_NAME = "ADFlow"
+    APP_VERSION = "2.1.1"
+
     def setup_ui(self):
-        self.setWindowTitle("TOMATO AD Voice Generator")
+        self.setWindowTitle(f"{self.APP_NAME} - AD Voice Generator")
         self.setMinimumSize(1000, 900)
-        
+
         # 메인 스타일 적용
         self.setStyleSheet(MAIN_STYLE)
-        
+
         # 중앙 위젯
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
         layout.setSpacing(12)
         layout.setContentsMargins(20, 16, 20, 16)
-        
+
         # === 헤더 ===
         header_layout = QHBoxLayout()
         header_layout.setSpacing(16)
-        
+
         # 로고 & 타이틀
         title_layout = QHBoxLayout()
-        title_layout.setSpacing(10)
-        
-        # 토마토 로고 (텍스트)
-        logo = QLabel("TOMATO")
+        title_layout.setSpacing(6)
+
+        # ADFlow 로고
+        logo = QLabel(self.APP_NAME)
         logo.setStyleSheet(f"""
             font-size: 24px;
             font-weight: 800;
-            color: {COLORS['tomato']};
+            color: {COLORS['accent_primary']};
             letter-spacing: -1px;
         """)
         title_layout.addWidget(logo)
-        
-        logo_ad = QLabel("AD")
-        logo_ad.setStyleSheet(f"""
-            font-size: 24px;
-            font-weight: 800;
-            color: {COLORS['text_primary']};
-            letter-spacing: -1px;
+
+        # 버전 표시
+        version_label = QLabel(f"v{self.APP_VERSION}")
+        version_label.setStyleSheet(f"""
+            font-size: 11px;
+            font-weight: 500;
+            color: {COLORS['text_muted']};
+            margin-top: 8px;
         """)
-        title_layout.addWidget(logo_ad)
-        
+        title_layout.addWidget(version_label)
+
         header_layout.addLayout(title_layout)
         header_layout.addStretch()
         
@@ -666,6 +671,15 @@ class MainWindow(QMainWindow):
                 return
 
             project.SetCurrentTimeline(timeline)
+
+            # === 3.5. 타임라인 시작 타임코드를 00:00:00:00으로 설정 ===
+            try:
+                # 타임라인 설정으로 시작 타임코드 변경 시도
+                timeline.SetSetting("startTimecode", "00:00:00:00")
+                debug_log.append("타임라인 시작 TC → 00:00:00:00 설정")
+            except Exception as e:
+                debug_log.append(f"타임라인 시작 TC 설정 실패: {e}")
+                # 실패해도 계속 진행 (기본값 사용)
 
             # === 4. AD용 오디오 트랙 추가 ===
             # 기존 오디오 트랙 수 확인

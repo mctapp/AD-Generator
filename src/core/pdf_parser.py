@@ -109,19 +109,28 @@ class PDFParser:
         return entries
     
     def _find_timecode_anchors(self, words: List[Dict]) -> List[Dict]:
-        """타임코드 위치를 먼저 찾아 앵커로 저장"""
+        """타임코드 위치를 먼저 찾아 앵커로 저장
+
+        타임코드 형식:
+        - 4자리: MMSS (예: 3400 = 34분 00초)
+        - 5자리: HMMSS (예: 11111 = 1시간 11분 11초)
+        - 6자리: HHMMSS (예: 015628 = 01시간 56분 28초)
+        """
         anchors = []
-        tc_pattern = re.compile(r'^\d{4}$')
-        
+        # 4-6자리 숫자 패턴 (60분 이상 타임코드 지원)
+        tc_pattern = re.compile(r'^\d{4,6}$')
+
         for w in words:
             text = w["text"].strip()
             if tc_pattern.match(text):
-                anchors.append({
-                    "timecode": text,
-                    "page": w["page"],
-                    "y": w["y0"],
-                    "x": w["x0"]
-                })
+                # 타임코드 유효성 검증
+                if self._is_valid_timecode(text):
+                    anchors.append({
+                        "timecode": text,
+                        "page": w["page"],
+                        "y": w["y0"],
+                        "x": w["x0"]
+                    })
         
         # 페이지, y좌표 순 정렬
         anchors.sort(key=lambda x: (x["page"], x["y"], x["x"]))
@@ -235,8 +244,8 @@ class PDFParser:
             for line in region_lines:
                 text = line["text"]
                 
-                # 타임코드 자체 제거
-                text = re.sub(r'^\d{4}\s*', '', text)
+                # 타임코드 자체 제거 (4-6자리)
+                text = re.sub(r'^\d{4,6}\s*', '', text)
                 
                 # 괄호 지시어 추출
                 bracket_match = re.match(r'\(([^)]+)\)\s*(.*)', text)
@@ -307,24 +316,77 @@ class PDFParser:
             script_text=script_text
         )
     
+    def _is_valid_timecode(self, raw: str) -> bool:
+        """타임코드 유효성 검증
+
+        Args:
+            raw: 4-6자리 숫자 문자열
+
+        Returns:
+            유효한 타임코드이면 True
+        """
+        try:
+            length = len(raw)
+
+            if length == 4:
+                # MMSS: 분(00-99), 초(00-59)
+                minutes = int(raw[:2])
+                seconds = int(raw[2:])
+                return 0 <= minutes <= 99 and 0 <= seconds <= 59
+            elif length == 5:
+                # HMMSS: 시(0-9), 분(00-59), 초(00-59)
+                hours = int(raw[0])
+                minutes = int(raw[1:3])
+                seconds = int(raw[3:])
+                return 0 <= hours <= 9 and 0 <= minutes <= 59 and 0 <= seconds <= 59
+            elif length == 6:
+                # HHMMSS: 시(00-99), 분(00-59), 초(00-59)
+                hours = int(raw[:2])
+                minutes = int(raw[2:4])
+                seconds = int(raw[4:])
+                return 0 <= hours <= 99 and 0 <= minutes <= 59 and 0 <= seconds <= 59
+            return False
+        except ValueError:
+            return False
+
     def _parse_timecode(self, raw: str) -> Tuple[str, int]:
         """
-        4자리 타임코드를 HH:MM:SS:FF 형식과 밀리초로 변환
-        
-        예: "0036" → ("00:00:36:00", 36000)
-            "0105" → ("00:01:05:00", 65000)
+        4-6자리 타임코드를 HH:MM:SS:FF 형식과 밀리초로 변환
+
+        형식:
+        - 4자리 MMSS: "3400" → ("00:34:00:00", 2040000) - 34분 0초
+        - 5자리 HMMSS: "11111" → ("01:11:11:00", 4271000) - 1시간 11분 11초
+        - 6자리 HHMMSS: "015628" → ("01:56:28:00", 7028000) - 1시간 56분 28초
         """
-        raw = raw.zfill(4)
-        
-        minutes = int(raw[:2])
-        seconds = int(raw[2:])
-        
-        hours = minutes // 60
-        minutes = minutes % 60
-        
+        length = len(raw)
+
+        if length == 4:
+            # MMSS 형식
+            minutes = int(raw[:2])
+            seconds = int(raw[2:])
+            hours = minutes // 60
+            minutes = minutes % 60
+        elif length == 5:
+            # HMMSS 형식 (시간 1자리)
+            hours = int(raw[0])
+            minutes = int(raw[1:3])
+            seconds = int(raw[3:])
+        elif length == 6:
+            # HHMMSS 형식 (시간 2자리)
+            hours = int(raw[:2])
+            minutes = int(raw[2:4])
+            seconds = int(raw[4:])
+        else:
+            # 기본값 (4자리로 처리)
+            raw = raw.zfill(4)
+            minutes = int(raw[:2])
+            seconds = int(raw[2:])
+            hours = minutes // 60
+            minutes = minutes % 60
+
         tc_formatted = f"{hours:02d}:{minutes:02d}:{seconds:02d}:00"
         tc_ms = (hours * 3600 + minutes * 60 + seconds) * 1000
-        
+
         return tc_formatted, tc_ms
     
     def get_page_count(self, pdf_path: str) -> int:

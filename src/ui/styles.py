@@ -1,5 +1,5 @@
 # ui/styles.py
-# TOMATO AD UI 스타일 정의 - v3.7 컬러 스킴
+# ADFlow UI 스타일 정의 - v2.1.1 컬러 스킴
 
 # 컬러 팔레트 - 다크 테마 + 브라운/옐로우/그린 포인트
 COLORS = {

@@ -43,11 +43,16 @@ class OverlapResult:
 
 class OverlapChecker:
     """AD 분량 오버랩 검사기"""
-    
+
     def __init__(self, fps: float = 24):
         self.fps = fps
         self.results: List[OverlapResult] = []
         self.issues: List[OverlapResult] = []
+        self.voice_settings: Optional[dict] = None
+
+    def set_voice_settings(self, settings: dict):
+        """음성 설정 저장"""
+        self.voice_settings = settings
     
     def check(self, entries: list, wav_folder: str) -> List[OverlapResult]:
         """오버랩 검사 실행
@@ -126,14 +131,26 @@ class OverlapChecker:
     def generate_report(self) -> str:
         """텍스트 리포트 생성"""
         summary = self.get_summary()
-        
+
         lines = [
             "=" * 50,
             "AD TTS 분량 검사 리포트",
             "=" * 50,
             "",
         ]
-        
+
+        # 음성 설정 정보 추가
+        if self.voice_settings:
+            lines.append("[음성 설정]")
+            lines.append(f"  화자: {self.voice_settings.get('speaker', '-')}")
+            lines.append(f"  속도: {self.voice_settings.get('speed', '-')}")
+            lines.append(f"  볼륨: {self.voice_settings.get('volume', '-')}")
+            lines.append(f"  피치: {self.voice_settings.get('pitch', '-')}")
+            lines.append(f"  알파: {self.voice_settings.get('alpha', '-')}")
+            lines.append("")
+            lines.append("-" * 50)
+            lines.append("")
+
         if self.issues:
             lines.append(f"⚠️ 문제 구간: {len(self.issues)}개")
             lines.append("")
