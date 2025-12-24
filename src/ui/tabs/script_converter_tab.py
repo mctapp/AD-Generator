@@ -268,7 +268,7 @@ class ScriptConverterTab(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         
-        self.table.setColumnWidth(0, 45)
+        self.table.setColumnWidth(0, 60)
         self.table.setColumnWidth(1, 100)
         self.table.setColumnWidth(2, 140)
         

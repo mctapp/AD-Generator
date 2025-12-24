@@ -344,9 +344,11 @@ class SRTBatchTab(QWidget):
         
         wav_folder = os.path.join(self.output_folder, 'wav')
         
-        # 0KB 파일 검사
+        # 0KB 파일 검사 (중복 제거)
         zero_kb_files = self._check_zero_kb_files(wav_folder)
-        self.last_failed_files = results.get('failed_files', []) + zero_kb_files
+        failed_files = results.get('failed_files', [])
+        # set으로 중복 제거 후 리스트로 변환
+        self.last_failed_files = list(set(failed_files + zero_kb_files))
         
         if self.last_failed_files:
             self.btn_show_errors.setVisible(True)

@@ -83,6 +83,7 @@ class ClipHistoryTable(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.verticalHeader().setVisible(False)  # 행 번호 숨김 (중복 방지)
         
         # 스타일
         self.table.setStyleSheet("""
