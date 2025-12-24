@@ -153,7 +153,8 @@ class ScriptConverterTab(QWidget):
         self.generator = SRTGenerator()
         self.validator = Validator()
         self.entries = []
-        self.original_entries = []  # 검증용 원본 보관
+        self.all_underlined_text = ""  # 검증용 원본 밑줄 텍스트
+        self.timecode_count_original = 0  # 원본 타임코드 수
         self.output_folder = None
         self.current_pdf = None
         self.last_saved_srt = None
@@ -375,7 +376,7 @@ class ScriptConverterTab(QWidget):
         """PDF에서 대본 파싱"""
         if not self.current_pdf:
             return
-        
+
         try:
             pdf_parser = PDFParser()
             self.entries = pdf_parser.parse(
@@ -384,7 +385,7 @@ class ScriptConverterTab(QWidget):
                 remove_periods=self.chk_remove_period.isChecked(),
                 include_brackets=self.chk_include_brackets.isChecked()
             )
-            
+
             if not self.entries:
                 QMessageBox.warning(
                     self, "경고",
@@ -393,9 +394,9 @@ class ScriptConverterTab(QWidget):
                 )
                 return
 
-            # 검증용 원본 보관 (깊은 복사)
-            import copy
-            self.original_entries = copy.deepcopy(self.entries)
+            # 검증용 원본 데이터 추출
+            self.all_underlined_text = pdf_parser.get_all_underlined_text(self.current_pdf)
+            self.timecode_count_original = len(self.entries)
 
             self._update_table()
             self._enable_buttons(True)
@@ -404,7 +405,7 @@ class ScriptConverterTab(QWidget):
 
             # 자동 저장 + 검증
             self._auto_save()
-            
+
         except Exception as e:
             QMessageBox.critical(self, "오류", f"PDF 파싱 실패:\n{str(e)}")
     
@@ -451,14 +452,15 @@ class ScriptConverterTab(QWidget):
 
     def _run_validation(self, base_name: str):
         """PDF → SRT 변환 검증 실행"""
-        if not self.original_entries or not self.entries:
+        if not self.all_underlined_text or not self.entries:
             return
 
         try:
-            # 검증 실행
+            # 검증 실행 (전체 밑줄 텍스트 vs 전체 SRT 텍스트)
             result = self.validator.validate(
-                original_entries=self.original_entries,
+                all_underlined_text=self.all_underlined_text,
                 converted_entries=self.entries,
+                timecode_count_original=self.timecode_count_original,
                 pdf_path=self.current_pdf,
                 srt_path=self.last_saved_srt
             )
@@ -490,8 +492,8 @@ class ScriptConverterTab(QWidget):
                     diff = result.timecode_converted - result.timecode_original
                     warning_msg += f"- 타임코드: {result.timecode_original}개 → {result.timecode_converted}개 ({diff:+d})\n"
                 if not result.syllable_match:
-                    diff = result.syllable_converted - result.syllable_original
-                    warning_msg += f"- 음절수: {result.syllable_original:,} → {result.syllable_converted:,} ({diff:+d})\n"
+                    warning_msg += f"- 음절수: PDF 밑줄 {result.syllable_original:,}자 → SRT {result.syllable_converted:,}자\n"
+                    warning_msg += f"  ({result.syllable_diff}자 누락 - 페이지 걸침 의심)\n"
                 warning_msg += f"\n검증 보고서: {base_name}_validation.txt"
 
                 QMessageBox.warning(self, "검증 경고", warning_msg)

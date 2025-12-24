@@ -396,5 +396,67 @@ class PDFParser:
         doc.close()
         return count
 
+    def get_all_underlined_text(self, pdf_path: str) -> str:
+        """
+        PDF에서 모든 밑줄 텍스트를 추출 (검증용)
+
+        페이지 경계와 타임코드에 관계없이 밑줄이 그어진 모든 텍스트를
+        순서대로 수집하여 반환합니다.
+
+        Args:
+            pdf_path: PDF 파일 경로
+
+        Returns:
+            밑줄이 그어진 모든 텍스트 (공백으로 연결)
+        """
+        doc = fitz.open(pdf_path)
+
+        # 모든 페이지에서 words와 밑줄 수집
+        all_words = []
+        all_underlines = []
+
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+
+            # words 수집
+            for w in page.get_text("words"):
+                all_words.append({
+                    "page": page_num,
+                    "x0": w[0], "y0": w[1], "x1": w[2], "y1": w[3],
+                    "text": w[4]
+                })
+
+            # 밑줄(수평선) 수집
+            for d in page.get_drawings():
+                items = d.get("items", [])
+                if items and items[0][0] == "l":
+                    start, end = items[0][1], items[0][2]
+                    if abs(start.y - end.y) < 1:  # 수평선
+                        all_underlines.append({
+                            "page": page_num,
+                            "y": start.y,
+                            "x0": min(start.x, end.x),
+                            "x1": max(start.x, end.x)
+                        })
+
+        doc.close()
+
+        # 밑줄이 있는 단어만 수집 (페이지, y, x 순으로 정렬)
+        underlined_words = []
+        for w in all_words:
+            if self._is_underlined(w, all_underlines):
+                underlined_words.append(w)
+
+        # 순서대로 정렬
+        underlined_words.sort(key=lambda x: (x["page"], x["y0"], x["x0"]))
+
+        # 텍스트 합치기
+        all_text = " ".join(w["text"] for w in underlined_words)
+
+        # 연속 공백 제거
+        all_text = re.sub(r'\s+', ' ', all_text).strip()
+
+        return all_text
+
 
 __all__ = ['PDFParser', 'ScriptEntry']
