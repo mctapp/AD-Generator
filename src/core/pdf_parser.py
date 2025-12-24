@@ -400,8 +400,9 @@ class PDFParser:
         """
         PDF에서 모든 밑줄 텍스트를 추출 (검증용)
 
-        페이지 경계와 타임코드에 관계없이 밑줄이 그어진 모든 텍스트를
-        순서대로 수집하여 반환합니다.
+        parse()와 동일한 라인 단위 로직 사용:
+        - 라인에 밑줄 단어가 하나라도 있으면 전체 라인 텍스트 포함
+        - 페이지 경계와 타임코드에 관계없이 모든 밑줄 라인 수집
 
         Args:
             pdf_path: PDF 파일 경로
@@ -441,17 +442,23 @@ class PDFParser:
 
         doc.close()
 
-        # 밑줄이 있는 단어만 수집 (페이지, y, x 순으로 정렬)
-        underlined_words = []
-        for w in all_words:
-            if self._is_underlined(w, all_underlines):
-                underlined_words.append(w)
+        # 라인 단위로 그룹화 (parse()와 동일한 로직)
+        lines = self._group_words_by_y(all_words, all_underlines)
 
-        # 순서대로 정렬
-        underlined_words.sort(key=lambda x: (x["page"], x["y0"], x["x0"]))
+        # 밑줄이 있는 라인의 텍스트만 수집
+        underlined_texts = []
+        for line in lines:
+            if line["underlined"]:
+                # 타임코드 제거 (4-6자리 숫자)
+                text = re.sub(r'^\d{4,6}\s*', '', line["text"])
+                # 괄호 지시어 제거
+                text = re.sub(r'\([^)]*\)\s*', '', text)
+                text = text.strip()
+                if text:
+                    underlined_texts.append(text)
 
         # 텍스트 합치기
-        all_text = " ".join(w["text"] for w in underlined_words)
+        all_text = " ".join(underlined_texts)
 
         # 연속 공백 제거
         all_text = re.sub(r'\s+', ' ', all_text).strip()
