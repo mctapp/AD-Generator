@@ -6,6 +6,7 @@ from .export import FCPXMLExporter, EDLExporter
 from .srt_generator import SRTGenerator
 from .srt_sync import SRTSync, SyncEntry
 from .xlsx_exporter import XLSXExporter
+from .validation import Validator, ValidationResult
 
 try:
     from .pdf_parser import PDFParser, ScriptEntry

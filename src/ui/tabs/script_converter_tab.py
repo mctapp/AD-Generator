@@ -27,7 +27,7 @@ except ImportError:
     PDFParser = None
     ScriptEntry = None
 
-from ...core import SRTGenerator
+from ...core import SRTGenerator, Validator
 
 try:
     from ...core import XLSXExporter
@@ -151,7 +151,9 @@ class ScriptConverterTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.generator = SRTGenerator()
+        self.validator = Validator()
         self.entries = []
+        self.original_entries = []  # 검증용 원본 보관
         self.output_folder = None
         self.current_pdf = None
         self.last_saved_srt = None
@@ -283,7 +285,12 @@ class ScriptConverterTab(QWidget):
         
         self.result_section.set_content(self.table)
         layout.addWidget(self.result_section, 1)
-        
+
+        # === 검증 결과 라벨 ===
+        self.label_validation = QLabel("")
+        self.label_validation.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: {FONTS['size_sm']};")
+        layout.addWidget(self.label_validation)
+
         # === 행 편집 버튼 ===
         edit_btn_layout = QHBoxLayout()
         edit_btn_layout.setSpacing(8)
@@ -380,18 +387,22 @@ class ScriptConverterTab(QWidget):
             
             if not self.entries:
                 QMessageBox.warning(
-                    self, "경고", 
+                    self, "경고",
                     "음성해설 대본을 찾을 수 없습니다.\n"
                     "PDF에 밑줄이 그어진 텍스트가 있는지 확인하세요."
                 )
                 return
-            
+
+            # 검증용 원본 보관 (깊은 복사)
+            import copy
+            self.original_entries = copy.deepcopy(self.entries)
+
             self._update_table()
             self._enable_buttons(True)
             self.result_section.set_title(f"추출 결과 ({len(self.entries)}개 항목)")
             self.status_message.emit(f"대본 분석 완료: {len(self.entries)}개 항목")
-            
-            # 자동 저장
+
+            # 자동 저장 + 검증
             self._auto_save()
             
         except Exception as e:
@@ -401,10 +412,10 @@ class ScriptConverterTab(QWidget):
         """출력폴더에 자동 저장"""
         if not self.output_folder or not self.entries:
             return
-        
+
         base_name = os.path.splitext(os.path.basename(self.current_pdf))[0]
         saved_files = []
-        
+
         # XLSX 저장
         if HAS_XLSX:
             try:
@@ -415,7 +426,7 @@ class ScriptConverterTab(QWidget):
                 saved_files.append("XLSX")
             except Exception as e:
                 self.status_message.emit(f"XLSX 자동 저장 실패: {e}")
-        
+
         # SRT 저장
         try:
             srt_path = os.path.join(self.output_folder, f"{base_name}.srt")
@@ -430,11 +441,64 @@ class ScriptConverterTab(QWidget):
             saved_files.append("SRT")
         except Exception as e:
             self.status_message.emit(f"SRT 자동 저장 실패: {e}")
-        
+
         if saved_files:
             self.label_auto_save.setText(f"자동 저장됨: {', '.join(saved_files)}")
             self.status_message.emit(f"자동 저장 완료: {', '.join(saved_files)}")
-    
+
+        # === 검증 실행 ===
+        self._run_validation(base_name)
+
+    def _run_validation(self, base_name: str):
+        """PDF → SRT 변환 검증 실행"""
+        if not self.original_entries or not self.entries:
+            return
+
+        try:
+            # 검증 실행
+            result = self.validator.validate(
+                original_entries=self.original_entries,
+                converted_entries=self.entries,
+                pdf_path=self.current_pdf,
+                srt_path=self.last_saved_srt
+            )
+
+            # UI에 결과 표시
+            summary_text = result.get_summary_text()
+
+            # 검증 실패 시 경고 색상
+            if result.is_valid:
+                self.label_validation.setStyleSheet(
+                    f"color: {COLORS['accent_success']}; font-size: {FONTS['size_sm']};"
+                )
+            else:
+                self.label_validation.setStyleSheet(
+                    f"color: {COLORS['accent_warning']}; font-size: {FONTS['size_sm']};"
+                )
+
+            self.label_validation.setText(summary_text)
+
+            # 검증 보고서 저장
+            if self.output_folder:
+                report_path = os.path.join(self.output_folder, f"{base_name}_validation.txt")
+                self.validator.save_report(report_path)
+
+            # 검증 실패 시 경고 메시지
+            if not result.is_valid:
+                warning_msg = "검증 결과 불일치가 발견되었습니다:\n\n"
+                if not result.timecode_match:
+                    diff = result.timecode_converted - result.timecode_original
+                    warning_msg += f"- 타임코드: {result.timecode_original}개 → {result.timecode_converted}개 ({diff:+d})\n"
+                if not result.syllable_match:
+                    diff = result.syllable_converted - result.syllable_original
+                    warning_msg += f"- 음절수: {result.syllable_original:,} → {result.syllable_converted:,} ({diff:+d})\n"
+                warning_msg += f"\n검증 보고서: {base_name}_validation.txt"
+
+                QMessageBox.warning(self, "검증 경고", warning_msg)
+
+        except Exception as e:
+            self.status_message.emit(f"검증 실패: {e}")
+
     def _update_table(self):
         """테이블 업데이트"""
         self.table.setRowCount(len(self.entries))
