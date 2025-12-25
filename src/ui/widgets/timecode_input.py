@@ -6,6 +6,8 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QIntValidator
 import re
 
+from ..styles import COLORS, FONTS, RADIUS
+
 
 class TimecodeInput(QWidget):
     """타임코드 입력 위젯 (HH:MM:SS:FF)"""
@@ -21,31 +23,35 @@ class TimecodeInput(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
-        
+
         # 스타일
-        input_style = """
-            QLineEdit {
-                background-color: #333;
-                border: 1px solid #555;
-                border-radius: 3px;
+        input_style = f"""
+            QLineEdit {{
+                background-color: {COLORS['bg_tertiary']};
+                border: 2px solid {COLORS['border_default']};
+                border-radius: {RADIUS['md']};
                 padding: 8px;
-                font-family: 'Courier New', monospace;
-                font-size: 16px;
-                color: #4CAF50;
+                font-family: 'SF Mono', 'Consolas', monospace;
+                font-size: {FONTS['size_lg']};
+                color: {COLORS['accent_primary']};
                 text-align: center;
-            }
-            QLineEdit:focus {
-                border: 1px solid #4CAF50;
-            }
+            }}
+            QLineEdit:focus {{
+                border-color: {COLORS['accent_primary']};
+                background-color: {COLORS['bg_card']};
+            }}
+            QLineEdit:hover {{
+                border-color: {COLORS['border_light']};
+            }}
         """
-        
-        separator_style = """
-            QLabel {
-                font-family: 'Courier New', monospace;
-                font-size: 16px;
-                color: #888;
+
+        separator_style = f"""
+            QLabel {{
+                font-family: 'SF Mono', 'Consolas', monospace;
+                font-size: {FONTS['size_lg']};
+                color: {COLORS['text_muted']};
                 padding: 0 2px;
-            }
+            }}
         """
         
         # Hours

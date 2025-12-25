@@ -9,6 +9,8 @@ from PyQt6.QtCore import Qt, pyqtSignal
 import json
 import os
 
+from ..styles import COLORS, FONTS, RADIUS, get_button_style
+
 
 class VoicePanel(QWidget):
     """음성 설정 패널"""
@@ -58,19 +60,23 @@ class VoicePanel(QWidget):
         
         # 음성 설정 그룹
         group = QGroupBox("음성 설정")
-        group.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                border: 1px solid #444;
-                border-radius: 5px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
+        group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: 600;
+                font-size: {FONTS['size_base']};
+                color: {COLORS['text_primary']};
+                border: 2px solid {COLORS['border_default']};
+                border-radius: {RADIUS['lg']};
+                margin-top: 14px;
+                padding-top: 12px;
+                background-color: {COLORS['bg_card']};
+            }}
+            QGroupBox::title {{
                 subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
+                left: 14px;
+                padding: 0 8px;
+                color: {COLORS['accent_primary']};
+            }}
         """)
         group_layout = QVBoxLayout(group)
         
@@ -87,19 +93,7 @@ class VoicePanel(QWidget):
         
         self.btn_preview = QPushButton("미리듣기")
         self.btn_preview.setFixedWidth(100)
-        self.btn_preview.setStyleSheet("""
-            QPushButton {
-                background-color: #6366f1;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                color: white;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #7577f5;
-            }
-        """)
+        self.btn_preview.setStyleSheet(get_button_style('secondary'))
         self.btn_preview.clicked.connect(self.preview_requested.emit)
         voice_row.addWidget(self.btn_preview)
         
