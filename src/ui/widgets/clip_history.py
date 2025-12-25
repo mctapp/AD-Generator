@@ -10,8 +10,6 @@ from PyQt6.QtGui import QColor
 from typing import List
 from dataclasses import dataclass
 
-from ..styles import COLORS, FONTS, RADIUS, get_table_style, get_button_style
-
 
 @dataclass
 class ClipRecord:
@@ -40,19 +38,26 @@ class ClipHistoryTable(QWidget):
         # 헤더
         header_layout = QHBoxLayout()
         self.header_label = QLabel("생성 기록")
-        self.header_label.setStyleSheet(f"""
-            font-weight: 600;
-            font-size: {FONTS['size_base']};
-            color: {COLORS['text_primary']};
-            padding: 6px;
-        """)
+        self.header_label.setStyleSheet("font-weight: bold; padding: 5px;")
         header_layout.addWidget(self.header_label)
-
+        
         header_layout.addStretch()
-
+        
         self.btn_clear = QPushButton("기록 삭제")
-        self.btn_clear.setFixedWidth(90)
-        self.btn_clear.setStyleSheet(get_button_style('danger', 'sm'))
+        self.btn_clear.setFixedWidth(80)
+        self.btn_clear.setStyleSheet("""
+            QPushButton {
+                padding: 5px 10px;
+                font-size: 11px;
+                background-color: #555;
+                border: none;
+                border-radius: 3px;
+                color: #ccc;
+            }
+            QPushButton:hover {
+                background-color: #666;
+            }
+        """)
         self.btn_clear.clicked.connect(self._on_clear)
         header_layout.addWidget(self.btn_clear)
         
@@ -81,7 +86,26 @@ class ClipHistoryTable(QWidget):
         self.table.verticalHeader().setVisible(False)  # 행 번호 숨김 (중복 방지)
         
         # 스타일
-        self.table.setStyleSheet(get_table_style())
+        self.table.setStyleSheet("""
+            QTableWidget {
+                background-color: #2a2a2a;
+                gridline-color: #444;
+                border: 1px solid #444;
+                border-radius: 5px;
+            }
+            QTableWidget::item {
+                padding: 5px;
+            }
+            QTableWidget::item:selected {
+                background-color: #3a5a7a;
+            }
+            QHeaderView::section {
+                background-color: #333;
+                padding: 5px;
+                border: none;
+                border-bottom: 1px solid #444;
+            }
+        """)
         
         self.table.itemDoubleClicked.connect(self._on_double_click)
         layout.addWidget(self.table)
@@ -118,10 +142,10 @@ class ClipHistoryTable(QWidget):
         # 상태
         if success:
             item_status = QTableWidgetItem("완료")
-            item_status.setForeground(QColor(COLORS['accent_success']))
+            item_status.setForeground(QColor("#4CAF50"))
         else:
             item_status = QTableWidgetItem("실패")
-            item_status.setForeground(QColor(COLORS['accent_error']))
+            item_status.setForeground(QColor("#F44336"))
         item_status.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self.table.setItem(row, 3, item_status)
         
