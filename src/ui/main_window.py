@@ -11,8 +11,9 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
-from .styles import MAIN_STYLE, COLORS, FONTS, RADIUS, get_button_style
+from .styles import MAIN_STYLE, COLORS, FONTS, RADIUS, get_button_style, get_tab_style
 from .widgets import VoicePanel, CollapsibleSection
+from .effects import apply_card_shadow
 from .tabs import SRTBatchTab, SingleClipTab, ScriptConverterTab, SRTSyncTab
 from .settings_dialog import SettingsDialog
 from ..utils import config
@@ -57,7 +58,7 @@ class MainWindow(QMainWindow):
         # ADFlow 로고
         logo = QLabel(self.APP_NAME)
         logo.setStyleSheet(f"""
-            font-size: 24px;
+            font-size: {FONTS['size_3xl']};
             font-weight: 800;
             color: {COLORS['accent_primary']};
             letter-spacing: -1px;
@@ -67,9 +68,12 @@ class MainWindow(QMainWindow):
         # 버전 표시
         version_label = QLabel(f"v{self.APP_VERSION}")
         version_label.setStyleSheet(f"""
-            font-size: 11px;
-            font-weight: 500;
-            color: {COLORS['text_muted']};
+            font-size: {FONTS['size_xs']};
+            font-weight: 600;
+            color: {COLORS['accent_purple']};
+            background-color: {COLORS['bg_tertiary']};
+            padding: 2px 8px;
+            border-radius: {RADIUS['sm']};
             margin-top: 8px;
         """)
         title_layout.addWidget(version_label)
@@ -106,22 +110,31 @@ class MainWindow(QMainWindow):
             QTabWidget::pane {{
                 background-color: {COLORS['bg_primary']};
                 border: none;
+                border-top: 2px solid {COLORS['border_default']};
+            }}
+            QTabBar {{
+                background-color: transparent;
             }}
             QTabBar::tab {{
                 background-color: transparent;
                 color: {COLORS['text_muted']};
                 border: none;
-                padding: 12px 24px;
-                min-width: 90px;
+                padding: 14px 28px;
+                min-width: 100px;
                 font-size: {FONTS['size_base']};
-                font-weight: 500;
+                font-weight: 600;
+                margin-right: 4px;
+                border-top-left-radius: {RADIUS['md']};
+                border-top-right-radius: {RADIUS['md']};
             }}
             QTabBar::tab:hover {{
                 color: {COLORS['text_secondary']};
+                background-color: {COLORS['bg_hover']};
             }}
             QTabBar::tab:selected {{
-                color: {COLORS['accent_yellow']};
-                border-bottom: 2px solid {COLORS['accent_yellow']};
+                color: {COLORS['accent_primary']};
+                background-color: {COLORS['bg_tertiary']};
+                border-bottom: 3px solid {COLORS['accent_primary']};
             }}
         """)
         
@@ -164,12 +177,16 @@ class MainWindow(QMainWindow):
         output_frame = QFrame()
         output_frame.setStyleSheet(f"""
             QFrame {{
-                background-color: {COLORS['bg_secondary']};
-                border: 1px solid {COLORS['border_default']};
+                background-color: {COLORS['bg_card']};
+                border: 2px solid {COLORS['border_default']};
                 border-radius: {RADIUS['lg']};
                 padding: 12px;
             }}
+            QFrame:hover {{
+                border-color: {COLORS['border_light']};
+            }}
         """)
+        apply_card_shadow(output_frame)
         output_layout = QHBoxLayout(output_frame)
         output_layout.setContentsMargins(16, 10, 16, 10)
         output_layout.setSpacing(16)

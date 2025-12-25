@@ -8,6 +8,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
+from .styles import COLORS
+
 
 class SettingsDialog(QDialog):
     """설정 다이얼로그"""
@@ -67,7 +69,7 @@ class SettingsDialog(QDialog):
             'NAVER Cloud Platform에서 API 키 발급받기</a>'
         )
         info_label.setOpenExternalLinks(True)
-        info_label.setStyleSheet("color: #888; padding: 10px;")
+        info_label.setStyleSheet(f"color: {COLORS['text_muted']}; padding: 10px;")
         api_layout.addWidget(info_label)
         
         api_layout.addStretch()
