@@ -3,11 +3,11 @@
 
 import os
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QTableWidget, QTableWidgetItem,
     QCheckBox, QSpinBox, QComboBox, QFileDialog,
     QHeaderView, QAbstractItemView, QMessageBox,
-    QFrame, QSizePolicy
+    QFrame, QSizePolicy, QDialog
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QDragEnterEvent, QDropEvent
@@ -34,6 +34,190 @@ try:
     HAS_XLSX = True
 except ImportError:
     HAS_XLSX = False
+
+
+class ValidationDiffDialog(QDialog):
+    """검증 결과 상세 비교 다이얼로그"""
+
+    def __init__(self, original_text: str, converted_text: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("검증 상세 비교")
+        self.setMinimumSize(800, 600)
+        self.original_text = original_text
+        self.converted_text = converted_text
+        self.setup_ui()
+
+    def setup_ui(self):
+        from PyQt6.QtWidgets import QSplitter, QTextEdit
+
+        layout = QVBoxLayout(self)
+
+        # 설명
+        desc_label = QLabel("PDF 밑줄 텍스트와 SRT 변환 텍스트를 비교합니다. 빨간색은 누락된 부분입니다.")
+        desc_label.setStyleSheet(f"color: {COLORS['text_secondary']}; margin-bottom: 8px;")
+        layout.addWidget(desc_label)
+
+        # 스플리터 (좌우 비교)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # 왼쪽: PDF 원본
+        left_frame = QFrame()
+        left_layout = QVBoxLayout(left_frame)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+
+        left_title = QLabel("PDF 밑줄 텍스트 (원본)")
+        left_title.setStyleSheet(f"font-weight: bold; color: {COLORS['text_primary']};")
+        left_layout.addWidget(left_title)
+
+        self.text_original = QTextEdit()
+        self.text_original.setReadOnly(True)
+        self.text_original.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {COLORS['bg_tertiary']};
+                color: {COLORS['text_primary']};
+                border: 1px solid {COLORS['border_default']};
+                border-radius: 4px;
+                font-family: monospace;
+                font-size: 12px;
+            }}
+        """)
+        left_layout.addWidget(self.text_original)
+
+        # 통계
+        self.label_original_stats = QLabel("")
+        self.label_original_stats.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 11px;")
+        left_layout.addWidget(self.label_original_stats)
+
+        splitter.addWidget(left_frame)
+
+        # 오른쪽: SRT 변환본
+        right_frame = QFrame()
+        right_layout = QVBoxLayout(right_frame)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+
+        right_title = QLabel("SRT 변환 텍스트")
+        right_title.setStyleSheet(f"font-weight: bold; color: {COLORS['text_primary']};")
+        right_layout.addWidget(right_title)
+
+        self.text_converted = QTextEdit()
+        self.text_converted.setReadOnly(True)
+        self.text_converted.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {COLORS['bg_tertiary']};
+                color: {COLORS['text_primary']};
+                border: 1px solid {COLORS['border_default']};
+                border-radius: 4px;
+                font-family: monospace;
+                font-size: 12px;
+            }}
+        """)
+        right_layout.addWidget(self.text_converted)
+
+        # 통계
+        self.label_converted_stats = QLabel("")
+        self.label_converted_stats.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 11px;")
+        right_layout.addWidget(self.label_converted_stats)
+
+        splitter.addWidget(right_frame)
+
+        layout.addWidget(splitter, 1)
+
+        # 차이점 요약
+        diff_frame = QFrame()
+        diff_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {COLORS['bg_secondary']};
+                border: 1px solid {COLORS['border_default']};
+                border-radius: 4px;
+                padding: 8px;
+            }}
+        """)
+        diff_layout = QVBoxLayout(diff_frame)
+        diff_layout.setContentsMargins(12, 8, 12, 8)
+
+        self.label_diff_summary = QLabel("")
+        self.label_diff_summary.setStyleSheet(f"color: {COLORS['accent_warning']};")
+        diff_layout.addWidget(self.label_diff_summary)
+
+        layout.addWidget(diff_frame)
+
+        # 버튼
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+
+        btn_close = QPushButton("닫기")
+        btn_close.setStyleSheet(get_button_style('primary'))
+        btn_close.clicked.connect(self.accept)
+        btn_layout.addWidget(btn_close)
+
+        layout.addLayout(btn_layout)
+
+        # 데이터 로드
+        self._load_comparison()
+
+    def _load_comparison(self):
+        """텍스트 비교 및 하이라이트"""
+        import re
+
+        # 공백/개행 정규화
+        def normalize(text):
+            return re.sub(r'\s+', '', text)
+
+        orig_normalized = normalize(self.original_text)
+        conv_normalized = normalize(self.converted_text)
+
+        # 원본 텍스트 표시 (개행 유지)
+        self.text_original.setPlainText(self.original_text)
+        self.text_converted.setPlainText(self.converted_text)
+
+        # 통계
+        orig_syllables = len(orig_normalized)
+        conv_syllables = len(conv_normalized)
+
+        self.label_original_stats.setText(f"음절 수: {orig_syllables:,}자")
+        self.label_converted_stats.setText(f"음절 수: {conv_syllables:,}자")
+
+        # 차이점 분석
+        diff = orig_syllables - conv_syllables
+        if diff > 0:
+            self.label_diff_summary.setText(
+                f"⚠️ {diff:,}자 누락 (원본 {orig_syllables:,}자 → 변환 {conv_syllables:,}자)"
+            )
+            self.label_diff_summary.setStyleSheet(f"color: {COLORS['accent_error']};")
+        elif diff < 0:
+            self.label_diff_summary.setText(
+                f"ℹ️ {abs(diff):,}자 추가됨 (원본 {orig_syllables:,}자 → 변환 {conv_syllables:,}자)"
+            )
+            self.label_diff_summary.setStyleSheet(f"color: {COLORS['accent_warning']};")
+        else:
+            self.label_diff_summary.setText(
+                f"✓ 음절 수 일치 ({orig_syllables:,}자)"
+            )
+            self.label_diff_summary.setStyleSheet(f"color: {COLORS['accent_success']};")
+
+        # 누락된 문자 찾기 (간단한 diff)
+        missing_chars = self._find_missing(orig_normalized, conv_normalized)
+        if missing_chars:
+            preview = missing_chars[:50]
+            if len(missing_chars) > 50:
+                preview += "..."
+            current_text = self.label_diff_summary.text()
+            self.label_diff_summary.setText(f"{current_text}\n누락 의심: {preview}")
+
+    def _find_missing(self, original: str, converted: str) -> str:
+        """원본에서 변환본에 없는 문자 찾기 (순서 무시, 빈도 기반)"""
+        from collections import Counter
+
+        orig_counter = Counter(original)
+        conv_counter = Counter(converted)
+
+        missing = []
+        for char, count in orig_counter.items():
+            diff = count - conv_counter.get(char, 0)
+            if diff > 0:
+                missing.extend([char] * diff)
+
+        return ''.join(missing)
 
 
 class PDFDropZone(QFrame):
@@ -288,9 +472,22 @@ class ScriptConverterTab(QWidget):
         layout.addWidget(self.result_section, 1)
 
         # === 검증 결과 라벨 ===
+        validation_layout = QHBoxLayout()
+
         self.label_validation = QLabel("")
         self.label_validation.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: {FONTS['size_sm']};")
-        layout.addWidget(self.label_validation)
+        validation_layout.addWidget(self.label_validation)
+
+        validation_layout.addStretch()
+
+        self.btn_validation_detail = QPushButton("상세 비교")
+        self.btn_validation_detail.setStyleSheet(get_button_style('secondary', 'sm'))
+        self.btn_validation_detail.setFixedWidth(90)
+        self.btn_validation_detail.clicked.connect(self._show_validation_detail)
+        self.btn_validation_detail.setVisible(False)
+        validation_layout.addWidget(self.btn_validation_detail)
+
+        layout.addLayout(validation_layout)
 
         # === 행 편집 버튼 ===
         edit_btn_layout = QHBoxLayout()
@@ -473,10 +670,12 @@ class ScriptConverterTab(QWidget):
                 self.label_validation.setStyleSheet(
                     f"color: {COLORS['accent_success']}; font-size: {FONTS['size_sm']};"
                 )
+                self.btn_validation_detail.setVisible(False)
             else:
                 self.label_validation.setStyleSheet(
                     f"color: {COLORS['accent_warning']}; font-size: {FONTS['size_sm']};"
                 )
+                self.btn_validation_detail.setVisible(True)
 
             self.label_validation.setText(summary_text)
 
@@ -783,4 +982,23 @@ class ScriptConverterTab(QWidget):
                 bracket_content=entry.bracket_content,
                 script_text=item.text()
             )
+
+    def _show_validation_detail(self):
+        """검증 상세 비교 다이얼로그 표시"""
+        if not self.all_underlined_text or not self.entries:
+            QMessageBox.information(self, "알림", "비교할 데이터가 없습니다.")
+            return
+
+        # SRT 변환 텍스트 생성
+        converted_text = "\n".join([
+            f"[{entry.timecode_formatted}] {entry.script_text}"
+            for entry in self.entries
+        ])
+
+        dialog = ValidationDiffDialog(
+            self.all_underlined_text,
+            converted_text,
+            self
+        )
+        dialog.exec()
 

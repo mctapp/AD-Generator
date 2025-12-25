@@ -71,56 +71,77 @@ class ErrorReportDialog(QDialog):
 
 class TTSWorker(QThread):
     """TTS 생성 워커 스레드"""
-    
+
     progress = pyqtSignal(int, int, str)
-    item_complete = pyqtSignal(int, str)
+    item_complete = pyqtSignal(int, str)  # (entry_index, status)
     finished = pyqtSignal(dict)
-    
-    def __init__(self, engine, entries, wav_folder, fps):
+
+    def __init__(self, engine, entries, wav_folder, fps, target_indices=None):
         super().__init__()
         self.engine = engine
         self.entries = entries
         self.wav_folder = wav_folder
         self.fps = fps
+        self.target_indices = target_indices  # None이면 전체 처리, 리스트면 해당 인덱스만
         self._cancelled = False
     
     def run(self):
-        results = {'success': 0, 'failed': 0, 'cancelled': False, 'failed_files': []}
-        total = len(self.entries)
-        
-        for i, entry in enumerate(self.entries):
+        results = {
+            'success': 0,
+            'failed': 0,
+            'skipped': 0,
+            'cancelled': False,
+            'failed_files': [],
+            'failed_indices': []  # 실패한 항목의 인덱스
+        }
+
+        # 처리할 인덱스 결정
+        if self.target_indices is not None:
+            indices_to_process = self.target_indices
+        else:
+            indices_to_process = list(range(len(self.entries)))
+
+        total = len(indices_to_process)
+
+        for progress_idx, entry_idx in enumerate(indices_to_process):
             if self._cancelled:
                 results['cancelled'] = True
                 break
-            
+
+            entry = self.entries[entry_idx]
             filename = f"{ms_to_filename_tc(entry.start_ms, self.fps)}.wav"
             output_path = os.path.join(self.wav_folder, filename)
-            
-            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-                results['success'] += 1
-                self.progress.emit(i + 1, total, f"기존 파일: {filename}")
-                self.item_complete.emit(i, 'skipped')
-                continue
-            
-            self.progress.emit(i + 1, total, f"생성 중: {filename}")
-            
+
+            # 재시도 모드가 아닐 때만 기존 파일 스킵
+            if self.target_indices is None:
+                if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                    results['success'] += 1
+                    results['skipped'] += 1
+                    self.progress.emit(progress_idx + 1, total, f"기존 파일: {filename}")
+                    self.item_complete.emit(entry_idx, 'skipped')
+                    continue
+
+            self.progress.emit(progress_idx + 1, total, f"생성 중: {filename}")
+
             if self.engine.generate_single(entry.text, output_path):
                 # 생성 후 0KB 체크
                 if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
                     results['success'] += 1
-                    self.item_complete.emit(i, 'success')
+                    self.item_complete.emit(entry_idx, 'success')
                 else:
                     results['failed'] += 1
                     results['failed_files'].append(filename)
-                    self.item_complete.emit(i, 'failed')
+                    results['failed_indices'].append(entry_idx)
+                    self.item_complete.emit(entry_idx, 'failed')
             else:
                 results['failed'] += 1
                 results['failed_files'].append(filename)
-                self.item_complete.emit(i, 'failed')
-            
-            if i < total - 1 and not self._cancelled:
+                results['failed_indices'].append(entry_idx)
+                self.item_complete.emit(entry_idx, 'failed')
+
+            if progress_idx < total - 1 and not self._cancelled:
                 self.msleep(int(self.engine.api_delay * 1000))
-        
+
         self.finished.emit(results)
     
     def cancel(self):
@@ -145,6 +166,7 @@ class SRTBatchTab(QWidget):
         self.output_format = 'fcpxml'
         self.voice_settings = {}  # 음성 설정 (리포트용)
         self.last_failed_files = []
+        self.last_failed_indices = []  # 실패한 항목의 인덱스
         self.current_srt_path = None
         self.setup_ui()
     
@@ -216,7 +238,15 @@ class SRTBatchTab(QWidget):
         self.btn_show_errors.clicked.connect(self.show_error_files)
         self.btn_show_errors.setVisible(False)
         btn_layout.addWidget(self.btn_show_errors)
-        
+
+        # 실패 항목 재시도 버튼
+        self.btn_retry_failed = QPushButton("실패 항목 재시도")
+        self.btn_retry_failed.setStyleSheet(get_button_style('warning'))
+        self.btn_retry_failed.setFixedWidth(120)
+        self.btn_retry_failed.clicked.connect(self.retry_failed_items)
+        self.btn_retry_failed.setVisible(False)
+        btn_layout.addWidget(self.btn_retry_failed)
+
         btn_layout.addStretch()
         
         self.btn_cancel = QPushButton("취소")
@@ -341,17 +371,28 @@ class SRTBatchTab(QWidget):
             self.label_progress.setText("취소됨")
             self.status_message.emit("생성 취소됨")
             return
-        
+
         wav_folder = os.path.join(self.output_folder, 'wav')
-        
+
         # 0KB 파일 검사 (중복 제거)
         zero_kb_files = self._check_zero_kb_files(wav_folder)
         failed_files = results.get('failed_files', [])
         # set으로 중복 제거 후 리스트로 변환
         self.last_failed_files = list(set(failed_files + zero_kb_files))
-        
+        self.last_failed_indices = results.get('failed_indices', [])
+
+        # 0KB 파일에 해당하는 인덱스도 추가
+        if zero_kb_files:
+            for i, entry in enumerate(self.srt_parser.entries):
+                filename = f"{ms_to_filename_tc(entry.start_ms, self.fps)}.wav"
+                if filename in zero_kb_files and i not in self.last_failed_indices:
+                    self.last_failed_indices.append(i)
+
         if self.last_failed_files:
             self.btn_show_errors.setVisible(True)
+            self.btn_retry_failed.setVisible(True)
+        else:
+            self.btn_retry_failed.setVisible(False)
         
         # 오버랩 검사
         checker = OverlapChecker(self.fps)
@@ -424,3 +465,49 @@ class SRTBatchTab(QWidget):
     def refresh_api_status(self):
         self.tts_engine.set_credentials(config.client_id, config.client_secret)
         self.update_start_button()
+
+    def retry_failed_items(self):
+        """실패한 항목만 재시도"""
+        if not self.last_failed_indices or not self.srt_parser.entries:
+            QMessageBox.information(self, "알림", "재시도할 실패 항목이 없습니다.")
+            return
+
+        wav_folder = os.path.join(self.output_folder, 'wav')
+        os.makedirs(wav_folder, exist_ok=True)
+
+        # 실패한 파일들 삭제 (0KB 포함)
+        for idx in self.last_failed_indices:
+            entry = self.srt_parser.entries[idx]
+            filename = f"{ms_to_filename_tc(entry.start_ms, self.fps)}.wav"
+            filepath = os.path.join(wav_folder, filename)
+            if os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                except:
+                    pass
+
+        self.tts_engine.set_credentials(config.client_id, config.client_secret)
+        self.tts_engine.api_delay = config.get('app', 'api_delay') or 0.3
+
+        self.worker = TTSWorker(
+            self.tts_engine,
+            self.srt_parser.entries,
+            wav_folder,
+            self.fps,
+            target_indices=self.last_failed_indices  # 실패한 인덱스만 전달
+        )
+        self.worker.progress.connect(self.on_progress)
+        self.worker.item_complete.connect(self.on_item_complete)
+        self.worker.finished.connect(self.on_generation_finished)
+
+        self.btn_start.setEnabled(False)
+        self.btn_cancel.setEnabled(True)
+        self.btn_retry_failed.setVisible(False)
+        self.btn_show_errors.setVisible(False)
+        self.drop_zone.setEnabled(False)
+
+        self.progress_bar.setMaximum(len(self.last_failed_indices))
+        self.progress_bar.setValue(0)
+        self.label_progress.setText(f"실패 항목 재시도: {len(self.last_failed_indices)}개")
+
+        self.worker.start()
