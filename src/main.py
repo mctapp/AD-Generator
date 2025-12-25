@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # main.py
-# TOMATO AD Voice Generator - 앱 진입점
+# ADFlow - AD Voice Generator 앱 진입점
 
 import sys
 import os
@@ -23,25 +23,68 @@ from PyQt6.QtGui import QFont
 from src.ui import MainWindow
 
 
+def apply_theme(app):
+    """Qt-Material 테마 적용"""
+    try:
+        from qt_material import apply_stylesheet
+
+        # 테마 파일 경로
+        theme_path = os.path.join(
+            os.path.dirname(__file__),
+            'resources',
+            'adflow_theme.xml'
+        )
+
+        # 액센트 색상 정의 (버튼 클래스용)
+        extra = {
+            # 버튼 액센트 색상
+            'danger': '#E74C3C',
+            'warning': '#F5C518',      # 옐로우
+            'success': '#1DB954',      # 그린
+
+            # 폰트 설정
+            'font_family': 'Apple SD Gothic Neo, Noto Sans KR, sans-serif',
+            'font_size': '13px',
+
+            # 밀도 (density_scale: -2 ~ 2, 기본 0)
+            'density_scale': '0',
+        }
+
+        # 테마 적용
+        if os.path.exists(theme_path):
+            apply_stylesheet(app, theme=theme_path, extra=extra)
+        else:
+            # 테마 파일이 없으면 기본 dark_amber 사용
+            apply_stylesheet(app, theme='dark_amber.xml', extra=extra)
+
+        return True
+    except ImportError:
+        print("qt-material not installed. Using default style.")
+        return False
+
+
 def main():
     # High DPI 지원
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
-    
+
     app = QApplication(sys.argv)
-    app.setApplicationName("TOMATO AD Voice Generator")
+    app.setApplicationName("ADFlow - AD Voice Generator")
     app.setOrganizationName("MediaCenter Tomorrow")
     app.setOrganizationDomain("mct.kr")
-    
+
     # 기본 폰트
     font = QFont("Apple SD Gothic Neo", 12)
     app.setFont(font)
-    
+
+    # Qt-Material 테마 적용
+    apply_theme(app)
+
     # 메인 윈도우
     window = MainWindow()
     window.show()
-    
+
     sys.exit(app.exec())
 
 

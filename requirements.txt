@@ -1,4 +1,5 @@
 PyQt6>=6.5.0
+qt-material>=2.14
 pyinstaller>=5.0
 openpyxl>=3.1.0
 PyMuPDF>=1.23.0
