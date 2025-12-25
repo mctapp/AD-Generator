@@ -12,9 +12,10 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 from .styles import COLORS
-from .widgets import VoicePanel, CollapsibleSection
+from .widgets import VoicePanel, VoiceSummaryWidget, CollapsibleSection
 from .tabs import SRTBatchTab, SingleClipTab, ScriptConverterTab, SRTSyncTab
 from .settings_dialog import SettingsDialog
+from .dialogs import TTSSettingsDialog
 from ..utils import config
 
 
@@ -114,22 +115,20 @@ class MainWindow(QMainWindow):
         
         layout.addWidget(self.tab_widget, 1)
         
-        # === 음성 설정 (접힘/펼침) ===
-        self.voice_section = CollapsibleSection("음성 설정", expanded=False)
-        
-        voice_content = QWidget()
-        voice_layout = QVBoxLayout(voice_content)
-        voice_layout.setContentsMargins(0, 0, 0, 0)
-        voice_layout.setSpacing(12)
-        
-        # 음성 패널
-        self.voice_panel = VoicePanel()
+        # === 음성 설정 (간략 요약) ===
+        voice_frame = QFrame()
+        voice_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        voice_frame_layout = QHBoxLayout(voice_frame)
+        voice_frame_layout.setContentsMargins(0, 0, 0, 0)
+
+        # 음성 요약 위젯
+        self.voice_panel = VoiceSummaryWidget()
         self.voice_panel.preview_requested.connect(self.on_preview_requested)
         self.voice_panel.settings_changed.connect(self.on_voice_settings_changed)
-        voice_layout.addWidget(self.voice_panel)
-        
-        self.voice_section.set_content(voice_content)
-        layout.addWidget(self.voice_section)
+        self.voice_panel.open_settings_requested.connect(self.open_tts_settings)
+        voice_frame_layout.addWidget(self.voice_panel)
+
+        layout.addWidget(voice_frame)
         
         # === 출력 설정 ===
         output_frame = QFrame()
@@ -833,6 +832,29 @@ class MainWindow(QMainWindow):
             self.load_config()
             self.srt_batch_tab.refresh_api_status()
             self.single_clip_tab.refresh_api_status()
+
+    def open_tts_settings(self):
+        """TTS 설정 다이얼로그"""
+        try:
+            from ..core.tts import get_tts_manager
+            tts_manager = get_tts_manager()
+        except Exception:
+            # TTS 매니저 없으면 기존 VoicePanel 기반 다이얼로그 사용하거나 에러 표시
+            QMessageBox.warning(self, "경고", "TTS 시스템이 초기화되지 않았습니다.")
+            return
+
+        dialog = TTSSettingsDialog(tts_manager, self)
+        dialog.settings_changed.connect(self._on_tts_settings_changed)
+        if dialog.exec():
+            # 다이얼로그에서 설정 적용됨
+            self.voice_panel.apply_tts_manager_settings(tts_manager)
+            settings = self.voice_panel.get_settings()
+            self.on_voice_settings_changed(settings)
+
+    def _on_tts_settings_changed(self, settings: dict):
+        """TTS 설정 변경 시그널 핸들러"""
+        self.voice_panel.set_settings(settings)
+        self.on_voice_settings_changed(settings)
     
     def show_status(self, message: str):
         """상태바 메시지"""
