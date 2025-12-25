@@ -459,8 +459,7 @@ class PDFParser:
             if line["underlined"]:
                 # 타임코드 제거 (4-6자리 숫자)
                 text = re.sub(r'^\d{4,6}\s*', '', line["text"])
-                # 괄호 지시어 제거
-                text = re.sub(r'\([^)]*\)\s*', '', text)
+                # 괄호 지시어는 제거하지 않음 (파싱 로직과 동일하게 유지)
                 text = text.strip()
                 if text:
                     underlined_texts.append(text)
