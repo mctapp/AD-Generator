@@ -12,8 +12,9 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QDragEnterEvent, QDropEvent
 
 from ..styles import COLORS, FONTS, RADIUS, get_button_style, get_table_style
-from ..widgets import CollapsibleSection
+from ..widgets import CollapsibleSection, WaveformWidget
 from ...core import SRTSync
+from ...utils import ms_to_filename_tc
 
 try:
     HAS_XLSX = True
@@ -321,9 +322,16 @@ class SRTSyncTab(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
-        
+
+        # 행 선택 시 파형 표시
+        self.table.itemSelectionChanged.connect(self._on_row_selected)
+
         result_layout.addWidget(self.table)
-        
+
+        # 파형 미리보기 위젯
+        self.waveform = WaveformWidget()
+        result_layout.addWidget(self.waveform)
+
         self.result_section.set_content(result_widget)
         layout.addWidget(self.result_section, 1)
         
@@ -654,3 +662,24 @@ class SRTSyncTab(QWidget):
             self.srt_path = srt_path
             self.srt_drop.set_file(srt_path)
             self._update_analyze_button()
+
+    def _on_row_selected(self):
+        """테이블 행 선택 시 파형 표시"""
+        if not self.wav_folder or not self.sync.results:
+            return
+
+        selected_rows = self.table.selectionModel().selectedRows()
+        if not selected_rows:
+            self.waveform.clear()
+            return
+
+        row = selected_rows[0].row()
+        if row < 0 or row >= len(self.sync.results):
+            return
+
+        entry = self.sync.results[row]
+        # 타임코드 기반 파일명 생성
+        filename = f"{ms_to_filename_tc(entry.start_ms, self.fps)}.wav"
+        wav_path = os.path.join(self.wav_folder, filename)
+
+        self.waveform.load_wav(wav_path)
