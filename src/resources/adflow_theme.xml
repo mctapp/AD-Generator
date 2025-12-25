@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    ADFlow Custom Theme for Qt-Material
+    Primary: Brown (Brand)
+    Background: Dark gray
+    Accents: Yellow (warning), Green (success)
+-->
+<resources>
+    <!-- Primary: Brown - 메인 브랜드 컬러 -->
+    <color name="primaryColor">#8B4513</color>
+    <color name="primaryLightColor">#A0522D</color>
+
+    <!-- Secondary: Dark background -->
+    <color name="secondaryColor">#2D2D2D</color>
+    <color name="secondaryLightColor">#3D3D3D</color>
+    <color name="secondaryDarkColor">#1A1A1A</color>
+
+    <!-- Text colors -->
+    <color name="primaryTextColor">#FFFFFF</color>
+    <color name="secondaryTextColor">#E0E0E0</color>
+</resources>

@@ -1,17 +1,17 @@
 # ui/main_window.py
-# 메인 윈도우 (개선된 UI)
+# 메인 윈도우 (Qt-Material 테마)
 
 import os
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QFileDialog, QComboBox, 
+    QPushButton, QLabel, QFileDialog, QComboBox,
     QTabWidget, QStatusBar, QFrame, QMessageBox,
     QScrollArea, QApplication
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
-from .styles import MAIN_STYLE, COLORS, FONTS, RADIUS, get_button_style
+from .styles import COLORS
 from .widgets import VoicePanel, CollapsibleSection
 from .tabs import SRTBatchTab, SingleClipTab, ScriptConverterTab, SRTSyncTab
 from .settings_dialog import SettingsDialog
@@ -36,10 +36,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{self.APP_NAME} - AD Voice Generator")
         self.setMinimumSize(1000, 900)
 
-        # 메인 스타일 적용
-        self.setStyleSheet(MAIN_STYLE)
-
-        # 중앙 위젯
+        # 중앙 위젯 (Qt-Material이 전역 스타일 적용)
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
@@ -52,78 +49,52 @@ class MainWindow(QMainWindow):
 
         # 로고 & 타이틀
         title_layout = QHBoxLayout()
-        title_layout.setSpacing(6)
+        title_layout.setSpacing(8)
 
-        # ADFlow 로고
+        # ADFlow 로고 (브라운 브랜드 컬러)
         logo = QLabel(self.APP_NAME)
-        logo.setStyleSheet(f"""
+        logo.setStyleSheet("""
             font-size: 24px;
             font-weight: 800;
-            color: {COLORS['accent_primary']};
-            letter-spacing: -1px;
+            color: #8B4513;
         """)
         title_layout.addWidget(logo)
 
         # 버전 표시
         version_label = QLabel(f"v{self.APP_VERSION}")
-        version_label.setStyleSheet(f"""
+        version_label.setStyleSheet("""
             font-size: 11px;
             font-weight: 500;
-            color: {COLORS['text_muted']};
             margin-top: 8px;
         """)
         title_layout.addWidget(version_label)
 
         header_layout.addLayout(title_layout)
         header_layout.addStretch()
-        
-        # 통합실행 버튼
+
+        # 통합실행 버튼 (success = 그린)
         self.btn_integrated = QPushButton("통합실행")
-        self.btn_integrated.setStyleSheet(get_button_style('primary', 'lg'))
+        self.btn_integrated.setProperty('class', 'success')
         self.btn_integrated.setFixedWidth(120)
         self.btn_integrated.clicked.connect(self.run_integrated_workflow)
         header_layout.addWidget(self.btn_integrated)
-        
+
         # 다빈치리졸브로 내보내기 버튼
         self.btn_resolve = QPushButton("다빈치리졸브로 내보내기")
-        self.btn_resolve.setStyleSheet(get_button_style('secondary', 'lg'))
         self.btn_resolve.clicked.connect(self.export_to_resolve)
         header_layout.addWidget(self.btn_resolve)
-        
+
         # 설정 버튼
         self.btn_settings = QPushButton("설정")
-        self.btn_settings.setStyleSheet(get_button_style('secondary'))
         self.btn_settings.setFixedWidth(70)
         self.btn_settings.clicked.connect(self.open_settings)
         header_layout.addWidget(self.btn_settings)
-        
+
         layout.addLayout(header_layout)
-        
+
         # === 탭 위젯 ===
         self.tab_widget = QTabWidget()
         self.tab_widget.setDocumentMode(True)
-        self.tab_widget.setStyleSheet(f"""
-            QTabWidget::pane {{
-                background-color: {COLORS['bg_primary']};
-                border: none;
-            }}
-            QTabBar::tab {{
-                background-color: transparent;
-                color: {COLORS['text_muted']};
-                border: none;
-                padding: 12px 24px;
-                min-width: 90px;
-                font-size: {FONTS['size_base']};
-                font-weight: 500;
-            }}
-            QTabBar::tab:hover {{
-                color: {COLORS['text_secondary']};
-            }}
-            QTabBar::tab:selected {{
-                color: {COLORS['accent_yellow']};
-                border-bottom: 2px solid {COLORS['accent_yellow']};
-            }}
-        """)
         
         # Tab 1: 대본 변환
         self.script_tab = ScriptConverterTab()
@@ -162,50 +133,37 @@ class MainWindow(QMainWindow):
         
         # === 출력 설정 ===
         output_frame = QFrame()
-        output_frame.setStyleSheet(f"""
-            QFrame {{
-                background-color: {COLORS['bg_secondary']};
-                border: 1px solid {COLORS['border_default']};
-                border-radius: {RADIUS['lg']};
-                padding: 12px;
-            }}
-        """)
+        output_frame.setFrameShape(QFrame.Shape.StyledPanel)
         output_layout = QHBoxLayout(output_frame)
         output_layout.setContentsMargins(16, 10, 16, 10)
         output_layout.setSpacing(16)
-        
+
         # 출력 폴더
         folder_label = QLabel("출력 폴더")
-        folder_label.setStyleSheet(f"color: {COLORS['text_secondary']}; font-weight: 500;")
+        folder_label.setStyleSheet("font-weight: 500;")
         output_layout.addWidget(folder_label)
-        
+
         self.label_output = QLabel("선택되지 않음")
-        self.label_output.setStyleSheet(f"""
-            color: {COLORS['text_muted']};
-            background-color: {COLORS['bg_tertiary']};
-            border: 1px solid {COLORS['border_default']};
-            border-radius: {RADIUS['md']};
+        self.label_output.setStyleSheet("""
             padding: 8px 12px;
             min-width: 250px;
         """)
         output_layout.addWidget(self.label_output, 1)
-        
+
         self.btn_output = QPushButton("선택")
-        self.btn_output.setStyleSheet(get_button_style('primary'))
+        self.btn_output.setProperty('class', 'success')
         self.btn_output.setFixedWidth(70)
         self.btn_output.clicked.connect(self.select_output_folder)
         output_layout.addWidget(self.btn_output)
-        
+
         # 구분자
         sep1 = QFrame()
         sep1.setFrameShape(QFrame.Shape.VLine)
-        sep1.setStyleSheet(f"background-color: {COLORS['border_default']};")
         sep1.setFixedWidth(1)
         output_layout.addWidget(sep1)
-        
+
         # 출력 형식
         format_label = QLabel("형식")
-        format_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
         output_layout.addWidget(format_label)
         
         self.combo_format = QComboBox()
@@ -217,7 +175,6 @@ class MainWindow(QMainWindow):
         
         # FPS
         fps_label = QLabel("FPS")
-        fps_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
         output_layout.addWidget(fps_label)
         
         self.combo_fps = QComboBox()
@@ -233,14 +190,6 @@ class MainWindow(QMainWindow):
         
         # === 상태바 ===
         self.status_bar = QStatusBar()
-        self.status_bar.setStyleSheet(f"""
-            QStatusBar {{
-                background-color: {COLORS['bg_secondary']};
-                color: {COLORS['text_muted']};
-                border-top: 1px solid {COLORS['border_default']};
-                padding: 4px 8px;
-            }}
-        """)
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("준비")
     
@@ -282,11 +231,8 @@ class MainWindow(QMainWindow):
             folder_name = os.path.basename(last_folder)
             self.label_output.setText(folder_name)
             self.label_output.setToolTip(last_folder)
-            self.label_output.setStyleSheet(f"""
-                color: {COLORS['accent_success']};
-                background-color: {COLORS['bg_tertiary']};
-                border: 1px solid {COLORS['accent_success']};
-                border-radius: {RADIUS['md']};
+            self.label_output.setStyleSheet("""
+                color: #1DB954;
                 padding: 8px 12px;
                 min-width: 250px;
             """)
@@ -326,11 +272,8 @@ class MainWindow(QMainWindow):
             folder_name = os.path.basename(folder)
             self.label_output.setText(folder_name)
             self.label_output.setToolTip(folder)
-            self.label_output.setStyleSheet(f"""
-                color: {COLORS['accent_success']};
-                background-color: {COLORS['bg_tertiary']};
-                border: 1px solid {COLORS['accent_success']};
-                border-radius: {RADIUS['md']};
+            self.label_output.setStyleSheet("""
+                color: #1DB954;
                 padding: 8px 12px;
                 min-width: 250px;
             """)
