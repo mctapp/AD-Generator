@@ -87,19 +87,7 @@ class VoicePanel(QWidget):
         
         self.btn_preview = QPushButton("미리듣기")
         self.btn_preview.setFixedWidth(100)
-        self.btn_preview.setStyleSheet("""
-            QPushButton {
-                background-color: #6366f1;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                color: white;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #7577f5;
-            }
-        """)
+        self.btn_preview.setProperty('class', 'success')  # Qt-Material 그린 버튼
         self.btn_preview.clicked.connect(self.preview_requested.emit)
         voice_row.addWidget(self.btn_preview)
         
