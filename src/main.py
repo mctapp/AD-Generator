@@ -21,6 +21,8 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 from src.ui import MainWindow
+from src.utils import config
+from src.core.tts import initialize_tts_engines
 
 
 def apply_theme(app):
@@ -80,6 +82,12 @@ def main():
 
     # Qt-Material 테마 적용
     apply_theme(app)
+
+    # TTS 엔진 초기화
+    initialize_tts_engines(
+        client_id=config.client_id or "",
+        client_secret=config.client_secret or ""
+    )
 
     # 메인 윈도우
     window = MainWindow()
