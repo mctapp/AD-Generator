@@ -85,7 +85,7 @@ class VoiceSummaryWidget(QWidget):
 
         # TTS 설정 버튼
         self.btn_settings = QPushButton("TTS 설정")
-        self.btn_settings.setFixedWidth(80)
+        self.btn_settings.setFixedWidth(100)
         self.btn_settings.clicked.connect(self.open_settings_requested.emit)
         btn_layout.addWidget(self.btn_settings)
 
