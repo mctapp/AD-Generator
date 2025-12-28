@@ -449,7 +449,8 @@ class TTSSettingsDialog(QDialog):
                 self._load_custom_voices()
                 self._load_voices()
             else:
-                QMessageBox.warning(self, "실패", "음성 클로닝에 실패했습니다.")
+                error_msg = self.tts_manager.get_last_clone_error() or "알 수 없는 오류"
+                QMessageBox.warning(self, "실패", f"음성 클로닝에 실패했습니다.\n\n{error_msg}")
         except Exception as e:
             QMessageBox.critical(self, "오류", f"클로닝 오류: {str(e)}")
 

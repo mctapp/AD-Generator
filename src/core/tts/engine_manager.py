@@ -41,7 +41,14 @@ class TTSEngineManager:
         # 콜백
         self.on_engine_status_changed: Optional[Callable[[str, bool], None]] = None
 
+        # 에러 추적
+        self._last_clone_error: Optional[str] = None
+
         self._initialized = True
+
+    def get_last_clone_error(self) -> Optional[str]:
+        """마지막 클로닝 에러 메시지 반환"""
+        return self._last_clone_error
 
     # === 엔진 관리 ===
 
@@ -250,6 +257,9 @@ class TTSEngineManager:
         # 클로닝 실행
         voice_info = engine.clone_voice(reference_audio, voice_name)
         if not voice_info:
+            # 에러 메시지 저장
+            if hasattr(engine, 'get_last_error'):
+                self._last_clone_error = engine.get_last_error()
             return None
 
         # 프로파일 생성 및 등록

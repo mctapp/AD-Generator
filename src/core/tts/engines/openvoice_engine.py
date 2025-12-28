@@ -36,6 +36,7 @@ class OpenVoiceEngine(BaseTTSEngine):
         self._tts_model = None
         self._se_extractor = None
         self._source_se = None  # 기본 화자 임베딩
+        self._last_error = None  # 마지막 에러 메시지
 
         self._ensure_dirs()
         self._load_cloned_voices()
@@ -44,6 +45,10 @@ class OpenVoiceEngine(BaseTTSEngine):
         """디렉토리 생성"""
         os.makedirs(self._models_path, exist_ok=True)
         os.makedirs(self._cloned_voices_dir, exist_ok=True)
+
+    def get_last_error(self) -> Optional[str]:
+        """마지막 에러 메시지 반환"""
+        return self._last_error
 
     @property
     def engine_id(self) -> str:
@@ -180,11 +185,13 @@ class OpenVoiceEngine(BaseTTSEngine):
                 print("[OpenVoice] ToneColorConverter 로드 완료")
                 return True
             else:
-                print(f"[OpenVoice] 체크포인트 파일 없음: {ckpt_converter}")
+                self._last_error = f"모델 파일 없음. 경로: {ckpt_converter}\n예상 파일: config.json, checkpoint.pth"
+                print(f"[OpenVoice] {self._last_error}")
                 return False
 
         except Exception as e:
-            print(f"[OpenVoice] ToneColorConverter 로드 실패: {e}")
+            self._last_error = f"ToneColorConverter 로드 실패: {str(e)}"
+            print(f"[OpenVoice] {self._last_error}")
             return False
 
     def generate(self, request: TTSRequest) -> TTSResult:
@@ -354,16 +361,21 @@ class OpenVoiceEngine(BaseTTSEngine):
         Returns:
             VoiceInfo: 생성된 음성 정보
         """
+        self._last_error = None
+
         if not self._ensure_initialized():
+            self._last_error = "OpenVoice 엔진 초기화 실패 (MeloTTS 로드 확인)"
             return None
 
         if not os.path.exists(reference_audio):
-            print(f"[OpenVoice] 참조 오디오 없음: {reference_audio}")
+            self._last_error = f"참조 오디오 파일을 찾을 수 없음: {reference_audio}"
+            print(f"[OpenVoice] {self._last_error}")
             return None
 
         try:
             # ToneColorConverter 로드
             if not self._load_tone_converter():
+                self._last_error = self._last_error or "ToneColorConverter 로드 실패"
                 return None
 
             # 고유 ID 생성
@@ -411,9 +423,10 @@ class OpenVoiceEngine(BaseTTSEngine):
             return voice_info
 
         except Exception as e:
-            print(f"[OpenVoice] 클로닝 실패: {e}")
+            self._last_error = f"클로닝 실패: {str(e)}"
+            print(f"[OpenVoice] {self._last_error}")
             if self.on_error:
-                self.on_error("clone_voice", f"클로닝 실패: {str(e)}")
+                self.on_error("clone_voice", self._last_error)
             return None
 
     def delete_cloned_voice(self, voice_id: str) -> bool:
