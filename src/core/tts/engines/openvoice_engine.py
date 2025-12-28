@@ -118,6 +118,7 @@ class OpenVoiceEngine(BaseTTSEngine):
 
         available, msg = self.is_available()
         if not available:
+            self._last_error = msg
             if self.on_error:
                 self.on_error("initialize", msg)
             return False
@@ -140,10 +141,12 @@ class OpenVoiceEngine(BaseTTSEngine):
             return True
 
         except Exception as e:
-            error_msg = f"초기화 실패: {str(e)}"
-            print(f"[OpenVoice] {error_msg}")
+            import traceback
+            error_detail = traceback.format_exc()
+            self._last_error = f"MeloTTS 로드 실패: {str(e)}\n\n상세:\n{error_detail}"
+            print(f"[OpenVoice] {self._last_error}")
             if self.on_error:
-                self.on_error("initialize", error_msg)
+                self.on_error("initialize", self._last_error)
             return False
 
     def _ensure_initialized(self) -> bool:
@@ -364,7 +367,9 @@ class OpenVoiceEngine(BaseTTSEngine):
         self._last_error = None
 
         if not self._ensure_initialized():
-            self._last_error = "OpenVoice 엔진 초기화 실패 (MeloTTS 로드 확인)"
+            # _last_error는 initialize()에서 이미 설정됨
+            if not self._last_error:
+                self._last_error = "OpenVoice 엔진 초기화 실패"
             return None
 
         if not os.path.exists(reference_audio):
