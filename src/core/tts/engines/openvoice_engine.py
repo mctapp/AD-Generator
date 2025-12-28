@@ -1,8 +1,9 @@
 # core/tts/engines/openvoice_engine.py
-# OpenVoice v2 로컬 TTS 엔진 (스텁)
+# OpenVoice v2 로컬 TTS 엔진
 
 import os
 import shutil
+import tempfile
 from typing import List, Optional, Dict
 
 from ..base_engine import (
@@ -30,11 +31,11 @@ class OpenVoiceEngine(BaseTTSEngine):
         self._cloned_voices: Dict[str, VoiceInfo] = {}
 
         # OpenVoice 및 MeloTTS 모듈 (동적 로드)
-        self._openvoice = None
-        self._melotts = None
         self._device = None
         self._tone_converter = None
         self._tts_model = None
+        self._se_extractor = None
+        self._source_se = None  # 기본 화자 임베딩
 
         self._ensure_dirs()
         self._load_cloned_voices()
@@ -88,10 +89,7 @@ class OpenVoiceEngine(BaseTTSEngine):
 
     def is_available(self) -> tuple:
         """OpenVoice 사용 가능 여부 확인"""
-        # OpenVoice 모듈 확인
         try:
-            # 실제 구현 시: import openvoice, melo_tts
-            # 현재는 스텁이므로 설치 여부만 확인
             import importlib.util
 
             openvoice_spec = importlib.util.find_spec("openvoice")
@@ -110,6 +108,9 @@ class OpenVoiceEngine(BaseTTSEngine):
 
     def initialize(self) -> bool:
         """모델 로드"""
+        if self._is_initialized:
+            return True
+
         available, msg = self.is_available()
         if not available:
             if self.on_error:
@@ -117,45 +118,227 @@ class OpenVoiceEngine(BaseTTSEngine):
             return False
 
         try:
-            # 실제 구현 시 모델 로드
-            # import torch
-            # from openvoice import se_extractor
-            # from openvoice.api import ToneColorConverter
-            # from melo.api import TTS as MeloTTS
-            #
-            # self._device = "cuda" if torch.cuda.is_available() else "cpu"
-            # self._tone_converter = ToneColorConverter(...)
-            # self._tts_model = MeloTTS(language='KR', device=self._device)
+            import torch
+            from melo.api import TTS as MeloTTS
 
+            # 디바이스 설정
+            self._device = "cuda" if torch.cuda.is_available() else "cpu"
+            print(f"[OpenVoice] 디바이스: {self._device}")
+
+            # MeloTTS 모델 로드
+            print("[OpenVoice] MeloTTS 모델 로드 중...")
+            self._tts_model = MeloTTS(language='KR', device=self._device)
+            print("[OpenVoice] MeloTTS 모델 로드 완료")
+
+            # OpenVoice ToneColorConverter는 클로닝 시에만 로드
             self._is_initialized = True
             return True
 
         except Exception as e:
+            error_msg = f"초기화 실패: {str(e)}"
+            print(f"[OpenVoice] {error_msg}")
             if self.on_error:
-                self.on_error("initialize", f"초기화 실패: {str(e)}")
+                self.on_error("initialize", error_msg)
+            return False
+
+    def _ensure_initialized(self) -> bool:
+        """초기화 확인 및 자동 초기화"""
+        if not self._is_initialized:
+            return self.initialize()
+        return True
+
+    def _load_tone_converter(self):
+        """ToneColorConverter 로드 (필요 시)"""
+        if self._tone_converter is not None:
+            return True
+
+        try:
+            import torch
+            from openvoice.api import ToneColorConverter
+
+            # 체크포인트 경로
+            ckpt_converter = os.path.join(self._models_path, "converter")
+
+            # 체크포인트가 없으면 다운로드
+            if not os.path.exists(ckpt_converter):
+                print("[OpenVoice] ToneColorConverter 모델 다운로드 중...")
+                os.makedirs(ckpt_converter, exist_ok=True)
+                # HuggingFace에서 다운로드
+                from huggingface_hub import snapshot_download
+                snapshot_download(
+                    repo_id="myshell-ai/OpenVoice",
+                    local_dir=ckpt_converter,
+                    allow_patterns=["checkpoints_v2/*"]
+                )
+
+            config_path = os.path.join(ckpt_converter, "checkpoints_v2", "converter", "config.json")
+            ckpt_path = os.path.join(ckpt_converter, "checkpoints_v2", "converter", "checkpoint.pth")
+
+            if os.path.exists(config_path) and os.path.exists(ckpt_path):
+                self._tone_converter = ToneColorConverter(config_path, device=self._device)
+                self._tone_converter.load_ckpt(ckpt_path)
+                print("[OpenVoice] ToneColorConverter 로드 완료")
+                return True
+            else:
+                print(f"[OpenVoice] 체크포인트 파일 없음: {ckpt_converter}")
+                return False
+
+        except Exception as e:
+            print(f"[OpenVoice] ToneColorConverter 로드 실패: {e}")
             return False
 
     def generate(self, request: TTSRequest) -> TTSResult:
         """TTS 생성"""
-        # 사용 가능 여부 확인
-        available, msg = self.is_available()
-        if not available:
+        # 초기화 확인
+        if not self._ensure_initialized():
             return TTSResult(
                 success=False,
-                error_message=f"OpenVoice를 사용할 수 없습니다: {msg}"
+                error_message="OpenVoice 엔진 초기화 실패"
             )
 
-        # 스텁: 실제 구현 필요
-        # 실제 구현 시:
-        # 1. MeloTTS로 기본 음성 생성
-        # 2. 클로닝된 음성인 경우 ToneColorConverter로 음색 변환
-        # 3. 속도/피치 조절 적용
+        try:
+            # 출력 디렉토리 생성
+            os.makedirs(os.path.dirname(request.output_path), exist_ok=True)
 
-        return TTSResult(
-            success=False,
-            error_message="OpenVoice 엔진은 아직 완전히 구현되지 않았습니다. "
-                          "pip install openvoice melo 명령으로 설치 후 사용하세요."
-        )
+            # 클로닝된 음성인지 확인
+            is_cloned = request.voice_id in self._cloned_voices
+
+            if is_cloned:
+                # 클로닝된 음성: MeloTTS 생성 후 음색 변환
+                return self._generate_cloned(request)
+            else:
+                # 기본 음성: MeloTTS로 직접 생성
+                return self._generate_base(request)
+
+        except Exception as e:
+            return TTSResult(
+                success=False,
+                error_message=f"TTS 생성 실패: {str(e)}"
+            )
+
+    def _generate_base(self, request: TTSRequest) -> TTSResult:
+        """기본 MeloTTS 음성 생성"""
+        try:
+            # MeloTTS 화자 ID (한국어 기본)
+            speaker_ids = self._tts_model.hps.data.spk2id
+            speaker_id = list(speaker_ids.values())[0]  # 첫 번째 화자
+
+            # 속도 조절 (-5 ~ +5 → 0.5 ~ 2.0)
+            speed = 1.0 - (request.speed * 0.1)  # speed=0이면 1.0, speed=5이면 0.5
+            speed = max(0.5, min(2.0, speed))
+
+            # TTS 생성
+            self._tts_model.tts_to_file(
+                request.text,
+                speaker_id,
+                request.output_path,
+                speed=speed
+            )
+
+            if os.path.exists(request.output_path):
+                return TTSResult(
+                    success=True,
+                    output_path=request.output_path
+                )
+            else:
+                return TTSResult(
+                    success=False,
+                    error_message="출력 파일 생성 실패"
+                )
+
+        except Exception as e:
+            return TTSResult(
+                success=False,
+                error_message=f"MeloTTS 생성 실패: {str(e)}"
+            )
+
+    def _generate_cloned(self, request: TTSRequest) -> TTSResult:
+        """클로닝된 음성으로 생성"""
+        try:
+            # ToneColorConverter 로드
+            if not self._load_tone_converter():
+                return TTSResult(
+                    success=False,
+                    error_message="ToneColorConverter 로드 실패"
+                )
+
+            # 클로닝된 음성 정보
+            voice_info = self._cloned_voices.get(request.voice_id)
+            if not voice_info:
+                return TTSResult(
+                    success=False,
+                    error_message=f"음성을 찾을 수 없음: {request.voice_id}"
+                )
+
+            # 음색 임베딩 로드
+            se_path = os.path.join(self._cloned_voices_dir, f"{request.voice_id}.pth")
+            if not os.path.exists(se_path):
+                return TTSResult(
+                    success=False,
+                    error_message=f"음색 데이터 없음: {se_path}"
+                )
+
+            import torch
+            target_se = torch.load(se_path, map_location=self._device)
+
+            # 임시 파일로 기본 음성 생성
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+                tmp_path = tmp.name
+
+            try:
+                # MeloTTS로 기본 음성 생성
+                speaker_ids = self._tts_model.hps.data.spk2id
+                speaker_id = list(speaker_ids.values())[0]
+
+                speed = 1.0 - (request.speed * 0.1)
+                speed = max(0.5, min(2.0, speed))
+
+                self._tts_model.tts_to_file(
+                    request.text,
+                    speaker_id,
+                    tmp_path,
+                    speed=speed
+                )
+
+                # 소스 음색 추출 (MeloTTS 기본 음성)
+                if self._source_se is None:
+                    from openvoice import se_extractor
+                    self._source_se, _ = se_extractor.get_se(
+                        tmp_path,
+                        self._tone_converter,
+                        vad=False
+                    )
+
+                # 음색 변환
+                self._tone_converter.convert(
+                    audio_src_path=tmp_path,
+                    src_se=self._source_se,
+                    tgt_se=target_se,
+                    output_path=request.output_path,
+                    message="@MyShell"
+                )
+
+                if os.path.exists(request.output_path):
+                    return TTSResult(
+                        success=True,
+                        output_path=request.output_path
+                    )
+                else:
+                    return TTSResult(
+                        success=False,
+                        error_message="음색 변환 실패"
+                    )
+
+            finally:
+                # 임시 파일 삭제
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+
+        except Exception as e:
+            return TTSResult(
+                success=False,
+                error_message=f"클로닝 음성 생성 실패: {str(e)}"
+            )
 
     # === 음성 클로닝 ===
 
@@ -171,14 +354,18 @@ class OpenVoiceEngine(BaseTTSEngine):
         Returns:
             VoiceInfo: 생성된 음성 정보
         """
-        available, msg = self.is_available()
-        if not available:
+        if not self._ensure_initialized():
             return None
 
         if not os.path.exists(reference_audio):
+            print(f"[OpenVoice] 참조 오디오 없음: {reference_audio}")
             return None
 
         try:
+            # ToneColorConverter 로드
+            if not self._load_tone_converter():
+                return None
+
             # 고유 ID 생성
             import uuid
             voice_id = f"clone_{uuid.uuid4().hex[:8]}"
@@ -188,9 +375,21 @@ class OpenVoiceEngine(BaseTTSEngine):
             ref_dest = os.path.join(self._cloned_voices_dir, ref_filename)
             shutil.copy2(reference_audio, ref_dest)
 
-            # 실제 구현 시: 음색 특성 추출 및 저장
-            # se = se_extractor.get_se(reference_audio, ...)
-            # torch.save(se, os.path.join(self._cloned_voices_dir, f"{voice_id}.pth"))
+            # 음색 특성 추출
+            print(f"[OpenVoice] 음색 추출 중: {reference_audio}")
+            from openvoice import se_extractor
+            import torch
+
+            target_se, _ = se_extractor.get_se(
+                reference_audio,
+                self._tone_converter,
+                vad=True  # Voice Activity Detection
+            )
+
+            # 음색 임베딩 저장
+            se_path = os.path.join(self._cloned_voices_dir, f"{voice_id}.pth")
+            torch.save(target_se, se_path)
+            print(f"[OpenVoice] 음색 저장: {se_path}")
 
             # 음성 정보 생성
             voice_info = VoiceInfo(
@@ -212,6 +411,7 @@ class OpenVoiceEngine(BaseTTSEngine):
             return voice_info
 
         except Exception as e:
+            print(f"[OpenVoice] 클로닝 실패: {e}")
             if self.on_error:
                 self.on_error("clone_voice", f"클로닝 실패: {str(e)}")
             return None
@@ -295,3 +495,10 @@ class OpenVoiceEngine(BaseTTSEngine):
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception:
             pass
+
+    def shutdown(self):
+        """엔진 종료"""
+        self._tone_converter = None
+        self._tts_model = None
+        self._source_se = None
+        self._is_initialized = False
