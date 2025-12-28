@@ -3,3 +3,14 @@ qt-material>=2.14
 pyinstaller>=5.0
 openpyxl>=3.1.0
 PyMuPDF>=1.23.0
+
+# Audio/ML dependencies for OpenVoice TTS
+torch>=2.0.0
+torchaudio>=2.0.0
+librosa>=0.10.0
+soundfile>=0.12.0
+huggingface_hub>=0.20.0
+
+# OpenVoice and MeloTTS (install from git)
+# pip install git+https://github.com/myshell-ai/OpenVoice.git
+# pip install git+https://github.com/myshell-ai/MeloTTS.git
