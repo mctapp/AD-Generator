@@ -296,8 +296,9 @@ class OpenVoiceEngine(BaseTTSEngine):
             # modeling_utils.load_state_dict가 클로저로 check_torch_load_is_safe를 참조하므로
             # load_state_dict 함수 자체를 패치
             original_load_state_dict = modeling_utils.load_state_dict
-            def patched_load_state_dict(checkpoint_file, map_location="cpu", weights_only=False):
+            def patched_load_state_dict(checkpoint_file, map_location="cpu", weights_only=False, **kwargs):
                 import torch
+                # torch.load에 전달 가능한 파라미터만 추출
                 return torch.load(checkpoint_file, map_location=map_location, weights_only=weights_only)
             modeling_utils.load_state_dict = patched_load_state_dict
 
