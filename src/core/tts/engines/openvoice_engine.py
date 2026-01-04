@@ -306,29 +306,33 @@ class OpenVoiceEngine(BaseTTSEngine):
         except Exception as e:
             print(f"[OpenVoice] transformers 패치 실패 (무시): {e}")
 
-        # faster_whisper WhisperModel 패치 (CUDA 없는 환경에서 CPU 사용)
-        # OpenVoice의 se_extractor가 WhisperModel을 CUDA로 초기화하려 하므로
-        # CPU 환경에서도 동작하도록 패치
+        # OpenVoice se_extractor.split_audio_whisper 패치
+        # Whisper 모델 로딩이 CPU에서 매우 느리므로, TTS 생성 오디오에는
+        # VAD 분할 없이 원본 오디오를 그대로 사용하도록 패치
         try:
-            import faster_whisper
-            OriginalWhisperModel = faster_whisper.WhisperModel
+            from openvoice import se_extractor
+            import shutil
 
-            class PatchedWhisperModel(OriginalWhisperModel):
-                def __init__(self, model_size_or_path, device="auto", compute_type="default", **kwargs):
-                    # CUDA가 없으면 CPU 사용
-                    import torch
-                    if device == "cuda" and not torch.cuda.is_available():
-                        device = "cpu"
-                        compute_type = "int8"  # CPU에서는 int8이 더 효율적
-                    super().__init__(model_size_or_path, device=device, compute_type=compute_type, **kwargs)
+            def patched_split_audio_whisper(audio_path, target_dir="processed", audio_name="audio"):
+                """Whisper 없이 오디오 파일을 그대로 복사하여 반환
 
-            faster_whisper.WhisperModel = PatchedWhisperModel
-            # transcribe 모듈에서도 사용하므로 함께 패치
-            if hasattr(faster_whisper, 'transcribe'):
-                faster_whisper.transcribe.WhisperModel = PatchedWhisperModel
-            print("[OpenVoice] faster_whisper CPU 패치 적용")
+                TTS로 생성된 깨끗한 오디오는 VAD 분할이 불필요하므로
+                원본 파일을 그대로 사용합니다.
+                """
+                import os
+                wavs_folder = os.path.join(target_dir, audio_name)
+                os.makedirs(wavs_folder, exist_ok=True)
+
+                # 원본 오디오를 복사
+                target_path = os.path.join(wavs_folder, "0.wav")
+                shutil.copy2(audio_path, target_path)
+
+                return wavs_folder
+
+            se_extractor.split_audio_whisper = patched_split_audio_whisper
+            print("[OpenVoice] se_extractor Whisper 우회 패치 적용")
         except Exception as e:
-            print(f"[OpenVoice] faster_whisper 패치 실패 (무시): {e}")
+            print(f"[OpenVoice] se_extractor 패치 실패 (무시): {e}")
 
         self._mecab_patched = True
         print("[OpenVoice] mecab 모듈 의존성 우회 패치 적용")
