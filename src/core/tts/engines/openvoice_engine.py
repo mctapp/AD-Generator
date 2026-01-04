@@ -111,34 +111,71 @@ class OpenVoiceEngine(BaseTTSEngine):
         except Exception as e:
             return (False, f"확인 실패: {str(e)}")
 
-    def _patch_japanese_module(self):
-        """일본어 모듈 의존성 우회 패치
+    def _patch_mecab_module(self):
+        """mecab 모듈 의존성 우회 패치
 
-        MeloTTS가 일본어 모듈을 로드할 때 mecab 의존성 오류가 발생하므로
-        일본어 모듈을 더미로 대체하여 한국어만 사용 가능하게 합니다.
+        MeloTTS와 g2pkk가 mecab을 필요로 하지만, mecab 설치가 복잡하므로
+        더미 모듈로 대체하여 우회합니다.
         """
         import sys
         import types
+        from importlib.machinery import ModuleSpec
 
         # 이미 패치되어 있는지 확인
-        if '_melo_jp_patched' in dir(self):
+        if '_mecab_patched' in dir(self):
             return
 
-        # 일본어 관련 모듈들을 더미로 대체
-        class DummyModule(types.ModuleType):
-            """더미 모듈 클래스"""
-            def __init__(self, name='dummy'):
+        # mecab 더미 모듈 생성 (g2pkk에서 사용하는 인터페이스 구현)
+        class DummyMeCab(types.ModuleType):
+            """MeCab 더미 모듈"""
+            def __init__(self, name='mecab'):
                 super().__init__(name)
+                # importlib.util.find_spec()에서 필요한 __spec__ 속성
+                self.__spec__ = ModuleSpec(name, None)
+                self.__file__ = __file__
+                self.__path__ = []
+
+            class Tagger:
+                """MeCab.Tagger 더미 클래스"""
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                def parse(self, text):
+                    # 간단한 더미 파싱 결과 반환
+                    return text + "\nEOS\n"
+
+                def parseToNode(self, text):
+                    return None
 
             def __call__(self, *args, **kwargs):
                 return self
 
             def __getattr__(self, name):
-                return DummyModule(name)
+                if name == 'Tagger':
+                    return self.Tagger
+                return DummyMeCab(f"{self.__name__}.{name}")
 
-        # mecab 관련 모듈 패치
+        # mecab 모듈 패치
+        dummy_mecab = DummyMeCab('mecab')
+        sys.modules['mecab'] = dummy_mecab
+        sys.modules['MeCab'] = dummy_mecab
+
+        # 일본어 관련 모듈들도 더미로 대체
+        class DummyModule(types.ModuleType):
+            """일반 더미 모듈 클래스"""
+            def __init__(self, name='dummy'):
+                super().__init__(name)
+                self.__spec__ = ModuleSpec(name, None)
+                self.__file__ = __file__
+                self.__path__ = []
+
+            def __call__(self, *args, **kwargs):
+                return self
+
+            def __getattr__(self, name):
+                return DummyModule(f"{self.__name__}.{name}")
+
         modules_to_patch = [
-            'mecab', 'MeCab', 'mecab-python3',
             'unidic', 'unidic_lite', 'unidic-lite',
             'fugashi',
         ]
@@ -148,14 +185,13 @@ class OpenVoiceEngine(BaseTTSEngine):
                 sys.modules[mod_name] = DummyModule(mod_name)
 
         # melo.text.japanese 모듈을 더미로 대체
-        # MeloTTS import 시 melo.text 패키지가 모든 언어 모듈을 로드하려고 함
         dummy_jp = DummyModule('melo.text.japanese')
         dummy_jp.japanese_cleaners = lambda x, *args, **kwargs: x
         dummy_jp.japanese_cleaners2 = lambda x, *args, **kwargs: x
         sys.modules['melo.text.japanese'] = dummy_jp
 
-        self._melo_jp_patched = True
-        print("[OpenVoice] 일본어 모듈 의존성 우회 패치 적용")
+        self._mecab_patched = True
+        print("[OpenVoice] mecab 모듈 의존성 우회 패치 적용")
 
     def initialize(self) -> bool:
         """모델 로드"""
@@ -172,8 +208,8 @@ class OpenVoiceEngine(BaseTTSEngine):
         try:
             import torch
 
-            # 일본어 모듈 의존성 우회 패치 적용
-            self._patch_japanese_module()
+            # mecab 모듈 의존성 우회 패치 적용
+            self._patch_mecab_module()
 
             from melo.api import TTS as MeloTTS
 
