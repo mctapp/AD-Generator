@@ -111,6 +111,52 @@ class OpenVoiceEngine(BaseTTSEngine):
         except Exception as e:
             return (False, f"확인 실패: {str(e)}")
 
+    def _patch_japanese_module(self):
+        """일본어 모듈 의존성 우회 패치
+
+        MeloTTS가 일본어 모듈을 로드할 때 mecab 의존성 오류가 발생하므로
+        일본어 모듈을 더미로 대체하여 한국어만 사용 가능하게 합니다.
+        """
+        import sys
+        import types
+
+        # 이미 패치되어 있는지 확인
+        if '_melo_jp_patched' in dir(self):
+            return
+
+        # 일본어 관련 모듈들을 더미로 대체
+        class DummyModule(types.ModuleType):
+            """더미 모듈 클래스"""
+            def __init__(self, name='dummy'):
+                super().__init__(name)
+
+            def __call__(self, *args, **kwargs):
+                return self
+
+            def __getattr__(self, name):
+                return DummyModule(name)
+
+        # mecab 관련 모듈 패치
+        modules_to_patch = [
+            'mecab', 'MeCab', 'mecab-python3',
+            'unidic', 'unidic_lite', 'unidic-lite',
+            'fugashi',
+        ]
+
+        for mod_name in modules_to_patch:
+            if mod_name not in sys.modules:
+                sys.modules[mod_name] = DummyModule(mod_name)
+
+        # melo.text.japanese 모듈을 더미로 대체
+        # MeloTTS import 시 melo.text 패키지가 모든 언어 모듈을 로드하려고 함
+        dummy_jp = DummyModule('melo.text.japanese')
+        dummy_jp.japanese_cleaners = lambda x, *args, **kwargs: x
+        dummy_jp.japanese_cleaners2 = lambda x, *args, **kwargs: x
+        sys.modules['melo.text.japanese'] = dummy_jp
+
+        self._melo_jp_patched = True
+        print("[OpenVoice] 일본어 모듈 의존성 우회 패치 적용")
+
     def initialize(self) -> bool:
         """모델 로드"""
         if self._is_initialized:
@@ -125,13 +171,17 @@ class OpenVoiceEngine(BaseTTSEngine):
 
         try:
             import torch
+
+            # 일본어 모듈 의존성 우회 패치 적용
+            self._patch_japanese_module()
+
             from melo.api import TTS as MeloTTS
 
             # 디바이스 설정
             self._device = "cuda" if torch.cuda.is_available() else "cpu"
             print(f"[OpenVoice] 디바이스: {self._device}")
 
-            # MeloTTS 모델 로드
+            # MeloTTS 모델 로드 (한국어만 사용)
             print("[OpenVoice] MeloTTS 모델 로드 중...")
             self._tts_model = MeloTTS(language='KR', device=self._device)
             print("[OpenVoice] MeloTTS 모델 로드 완료")
