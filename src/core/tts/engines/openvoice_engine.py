@@ -306,6 +306,30 @@ class OpenVoiceEngine(BaseTTSEngine):
         except Exception as e:
             print(f"[OpenVoice] transformers 패치 실패 (무시): {e}")
 
+        # faster_whisper WhisperModel 패치 (CUDA 없는 환경에서 CPU 사용)
+        # OpenVoice의 se_extractor가 WhisperModel을 CUDA로 초기화하려 하므로
+        # CPU 환경에서도 동작하도록 패치
+        try:
+            import faster_whisper
+            OriginalWhisperModel = faster_whisper.WhisperModel
+
+            class PatchedWhisperModel(OriginalWhisperModel):
+                def __init__(self, model_size_or_path, device="auto", compute_type="default", **kwargs):
+                    # CUDA가 없으면 CPU 사용
+                    import torch
+                    if device == "cuda" and not torch.cuda.is_available():
+                        device = "cpu"
+                        compute_type = "int8"  # CPU에서는 int8이 더 효율적
+                    super().__init__(model_size_or_path, device=device, compute_type=compute_type, **kwargs)
+
+            faster_whisper.WhisperModel = PatchedWhisperModel
+            # transcribe 모듈에서도 사용하므로 함께 패치
+            if hasattr(faster_whisper, 'transcribe'):
+                faster_whisper.transcribe.WhisperModel = PatchedWhisperModel
+            print("[OpenVoice] faster_whisper CPU 패치 적용")
+        except Exception as e:
+            print(f"[OpenVoice] faster_whisper 패치 실패 (무시): {e}")
+
         self._mecab_patched = True
         print("[OpenVoice] mecab 모듈 의존성 우회 패치 적용")
 
