@@ -126,6 +126,46 @@ class OpenVoiceEngine(BaseTTSEngine):
             return
 
         # mecab 더미 모듈 생성 (g2pkk에서 사용하는 인터페이스 구현)
+        class DummyMeCabTagger:
+            """MeCab.Tagger 더미 클래스 - g2pkk 호환"""
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __call__(self, text):
+                """g2pkk에서 self.mecab(text) 형태로 호출 시 (token, pos) 튜플 리스트 반환"""
+                if not text or not text.strip():
+                    return []
+
+                # 한글 문자별로 분리하여 (token, pos) 튜플 리스트 반환
+                tokens = []
+                for char in text:
+                    if char.strip():
+                        # (단어, 품사) 형태로 반환
+                        tokens.append((char, "NNG"))
+                return tokens
+
+            def parse(self, text):
+                """텍스트를 MeCab 출력 형식으로 반환
+
+                g2pkk는 이 결과를 줄 단위로 파싱하여 사용합니다.
+                형식: 단어\t품사,품사상세,...
+                """
+                if not text or not text.strip():
+                    return "EOS\n"
+
+                # 한글 문자별로 분리하여 품사 태깅 (간단한 더미)
+                result_lines = []
+                for char in text:
+                    if char.strip():
+                        # NNG: 일반명사, VV: 동사, MAG: 일반부사 등
+                        # g2pkk가 기대하는 최소한의 형식
+                        result_lines.append(f"{char}\tNNG,*,*,*,*,*,*,*")
+                result_lines.append("EOS")
+                return "\n".join(result_lines)
+
+            def parseToNode(self, text):
+                return None
+
         class DummyMeCab(types.ModuleType):
             """MeCab 더미 모듈"""
             def __init__(self, name='mecab'):
@@ -134,25 +174,14 @@ class OpenVoiceEngine(BaseTTSEngine):
                 self.__spec__ = ModuleSpec(name, None)
                 self.__file__ = __file__
                 self.__path__ = []
-
-            class Tagger:
-                """MeCab.Tagger 더미 클래스"""
-                def __init__(self, *args, **kwargs):
-                    pass
-
-                def parse(self, text):
-                    # 간단한 더미 파싱 결과 반환
-                    return text + "\nEOS\n"
-
-                def parseToNode(self, text):
-                    return None
+                self.Tagger = DummyMeCabTagger
 
             def __call__(self, *args, **kwargs):
                 return self
 
             def __getattr__(self, name):
                 if name == 'Tagger':
-                    return self.Tagger
+                    return DummyMeCabTagger
                 return DummyMeCab(f"{self.__name__}.{name}")
 
         # mecab 모듈 패치
