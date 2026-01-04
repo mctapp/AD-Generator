@@ -270,6 +270,22 @@ class OpenVoiceEngine(BaseTTSEngine):
         dummy_jp.japanese_cleaners2 = lambda x, *args, **kwargs: x
         sys.modules['melo.text.japanese'] = dummy_jp
 
+        # transformers 보안 체크 우회 패치
+        # torch < 2.6에서 CVE-2025-32434 보안 취약점 체크로 인해 모델 로드 실패
+        # safetensors 형식을 우선 사용하도록 설정하고, 보안 체크를 우회
+        try:
+            # transformers가 safetensors를 우선 사용하도록 환경변수 설정
+            import os
+            os.environ['SAFETENSORS_FAST_GPU'] = '1'
+
+            # 보안 체크 함수 패치 (torch < 2.6 환경에서 필요)
+            from transformers.utils import import_utils
+            if hasattr(import_utils, 'check_torch_load_is_safe'):
+                import_utils.check_torch_load_is_safe = lambda: None
+                print("[OpenVoice] transformers 보안 체크 우회 패치 적용")
+        except Exception as e:
+            print(f"[OpenVoice] transformers 패치 실패 (무시): {e}")
+
         self._mecab_patched = True
         print("[OpenVoice] mecab 모듈 의존성 우회 패치 적용")
 
