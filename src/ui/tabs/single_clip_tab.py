@@ -16,18 +16,35 @@ from ..widgets import TimecodeInput, ClipHistoryTable, CollapsibleSection
 from ...core import TTSEngine, TTSOptions
 from ...utils import config
 
+# 새 TTS 시스템
+try:
+    from ...core.tts import get_tts_manager
+    HAS_TTS_MANAGER = True
+except ImportError:
+    HAS_TTS_MANAGER = False
+
 
 class SingleClipTab(QWidget):
     """단일 클립 생성 탭"""
-    
+
     status_message = pyqtSignal(str)
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.tts_engine = TTSEngine()
+        self.tts_engine = TTSEngine()  # 레거시 엔진 (폴백용)
+        self._tts_manager = None  # TTSEngineManager (커스텀 음성 지원)
         self.output_folder = None
         self.fps = 24
+        self._init_tts_manager()
         self.setup_ui()
+
+    def _init_tts_manager(self):
+        """TTSEngineManager 초기화"""
+        if HAS_TTS_MANAGER:
+            try:
+                self._tts_manager = get_tts_manager()
+            except Exception:
+                self._tts_manager = None
     
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -158,19 +175,32 @@ class SingleClipTab(QWidget):
         has_text = len(self.text_edit.toPlainText().strip()) > 0
         has_api = config.has_api_keys()
         has_output = self.output_folder is not None
-        
-        self.btn_preview.setEnabled(has_text and has_api)
-        self.btn_generate.setEnabled(has_text and has_api and has_output)
-        
+
+        # TTSEngineManager가 있고 커스텀 음성이 선택되어 있으면 API 키 불필요
+        has_tts_engine = False
+        if self._tts_manager is not None:
+            try:
+                profile = self._tts_manager.get_current_profile()
+                if profile and profile.is_cloned:
+                    has_tts_engine = True
+                elif profile and profile.engine_id == 'openvoice':
+                    has_tts_engine = True
+            except Exception:
+                pass
+
+        can_generate = has_text and (has_api or has_tts_engine)
+        self.btn_preview.setEnabled(can_generate)
+        self.btn_generate.setEnabled(can_generate and has_output)
+
         has_records = len(self.clip_history.get_success_records()) > 0
         self.btn_export_fcpxml.setEnabled(has_records and has_output)
-        
+
         # 기록 수 업데이트
         record_count = len(self.clip_history.records)
         self.history_section.set_title(f"생성 기록 ({record_count}개)")
-        
-        if not has_api:
-            self.btn_generate.setToolTip("설정에서 API 키를 입력하세요")
+
+        if not has_api and not has_tts_engine:
+            self.btn_generate.setToolTip("설정에서 API 키를 입력하거나 커스텀 음성을 선택하세요")
         elif not has_output:
             self.btn_generate.setToolTip("출력 폴더를 선택하세요")
         else:
@@ -192,55 +222,77 @@ class SingleClipTab(QWidget):
         self.tts_engine.set_options(options)
     
     def preview_tts(self):
-        """미리듣기"""
+        """미리듣기 - TTSEngineManager를 통해 커스텀 음성도 지원"""
+        import platform
+
         text = self.text_edit.toPlainText().strip()
         if not text:
             return
-        
-        if not config.has_api_keys():
-            QMessageBox.warning(self, "경고", "설정에서 API 키를 먼저 입력하세요.")
-            return
-        
-        self.tts_engine.set_credentials(config.client_id, config.client_secret)
-        
+
         temp_file = os.path.join(tempfile.gettempdir(), 'tomato_preview.wav')
-        
+
         self.btn_preview.setEnabled(False)
         self.btn_preview.setText("생성 중...")
         QApplication.processEvents()
-        
-        if self.tts_engine.generate_single(text, temp_file):
-            subprocess.run(['afplay', temp_file], check=False)
+
+        success = False
+
+        # TTSEngineManager 우선 사용
+        if self._tts_manager is not None:
+            try:
+                self._init_tts_manager()  # 최신 설정 반영
+                result = self._tts_manager.generate(text, temp_file)
+                success = result.success
+                if not success:
+                    error_msg = result.error_message or "알 수 없는 오류"
+                    QMessageBox.warning(self, "오류", f"미리듣기 생성에 실패했습니다.\n\n{error_msg}")
+            except Exception:
+                pass
+
+        # 폴백: 레거시 엔진 사용
+        if not success and config.has_api_keys():
+            self.tts_engine.set_credentials(config.client_id, config.client_secret)
+            success = self.tts_engine.generate_single(text, temp_file)
+            if not success:
+                QMessageBox.warning(self, "오류", "미리듣기 생성에 실패했습니다.")
+
+        if success:
+            # 플랫폼에 따라 재생
+            if platform.system() == 'Darwin':
+                subprocess.run(['afplay', temp_file], check=False)
+            elif platform.system() == 'Linux':
+                subprocess.run(['aplay', temp_file], check=False)
+            else:
+                subprocess.run(['start', temp_file], shell=True, check=False)
             self.status_message.emit("미리듣기 완료")
         else:
-            QMessageBox.warning(self, "오류", "미리듣기 생성에 실패했습니다.")
             self.status_message.emit("미리듣기 실패")
-        
+
         self.btn_preview.setEnabled(True)
         self.btn_preview.setText("미리듣기")
     
     def generate_wav(self):
-        """WAV 파일 생성"""
+        """WAV 파일 생성 - TTSEngineManager를 통해 커스텀 음성도 지원"""
         text = self.text_edit.toPlainText().strip()
         if not text:
             return
-        
+
         if not self.timecode_input.is_valid():
             QMessageBox.warning(self, "경고", "올바른 타임코드를 입력하세요.")
             return
-        
+
         if not self.output_folder:
             QMessageBox.warning(self, "경고", "출력 폴더를 선택하세요.")
             return
-        
+
         # WAV 폴더 생성
         wav_folder = os.path.join(self.output_folder, 'wav')
         os.makedirs(wav_folder, exist_ok=True)
-        
+
         # 파일명 생성
         tc_filename = self.timecode_input.get_timecode_for_filename()
         output_path = os.path.join(wav_folder, f"{tc_filename}.wav")
-        
+
         # 파일 존재 확인
         if os.path.exists(output_path):
             reply = QMessageBox.question(
@@ -250,28 +302,44 @@ class SingleClipTab(QWidget):
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
-        
-        self.tts_engine.set_credentials(config.client_id, config.client_secret)
-        
+
         self.btn_generate.setEnabled(False)
         self.btn_generate.setText("생성 중...")
         QApplication.processEvents()
-        
-        success = self.tts_engine.generate_single(text, output_path)
-        
+
+        success = False
+        error_msg = None
+
+        # TTSEngineManager 우선 사용
+        if self._tts_manager is not None:
+            try:
+                self._init_tts_manager()  # 최신 설정 반영
+                result = self._tts_manager.generate(text, output_path)
+                success = result.success
+                if not success:
+                    error_msg = result.error_message
+            except Exception:
+                pass
+
+        # 폴백: 레거시 엔진 사용
+        if not success and config.has_api_keys():
+            self.tts_engine.set_credentials(config.client_id, config.client_secret)
+            success = self.tts_engine.generate_single(text, output_path)
+
         # 기록 추가
         timecode = self.timecode_input.get_timecode()
         self.clip_history.add_record(timecode, text, output_path, success)
-        
+
         self.btn_generate.setEnabled(True)
         self.btn_generate.setText("WAV 생성")
         self._update_buttons()
-        
+
         if success:
             self.status_message.emit(f"생성 완료: {tc_filename}.wav")
             self.text_edit.clear()
         else:
-            QMessageBox.warning(self, "오류", "WAV 생성에 실패했습니다.")
+            error_detail = f"\n\n{error_msg}" if error_msg else ""
+            QMessageBox.warning(self, "오류", f"WAV 생성에 실패했습니다.{error_detail}")
             self.status_message.emit("WAV 생성 실패")
     
     def _on_clip_selected(self, record):

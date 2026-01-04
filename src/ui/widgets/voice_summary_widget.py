@@ -6,6 +6,13 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
+# 새 TTS 시스템
+try:
+    from ...core.tts import get_tts_manager
+    HAS_TTS_MANAGER = True
+except ImportError:
+    HAS_TTS_MANAGER = False
+
 
 class VoiceSummaryWidget(QWidget):
     """음성 설정 요약 위젯
@@ -92,21 +99,41 @@ class VoiceSummaryWidget(QWidget):
         layout.addLayout(btn_layout)
 
     def update_display(self):
-        """표시 업데이트"""
+        """표시 업데이트 - TTSEngineManager의 커스텀 음성 정보도 표시"""
         settings = self._current_settings
 
-        # 음성 이름
-        speaker = settings.get('speaker', 'vdain')
-        voice_name = self._voice_names.get(speaker, speaker)
+        # 음성 이름 및 엔진 정보 가져오기
+        voice_name = None
+        engine_name = "CLOVA"
+        is_cloned = False
 
-        # 엔진 표시 (voice_id 형식: "clova.vdain" 또는 "vdain")
-        if '.' in speaker:
-            engine_id, _ = speaker.split('.', 1)
-            engine_name = engine_id.upper()
+        # TTSEngineManager에서 현재 프로파일 정보 가져오기
+        if HAS_TTS_MANAGER:
+            try:
+                tts_manager = get_tts_manager()
+                profile = tts_manager.get_current_profile()
+                if profile:
+                    voice_name = profile.name
+                    engine_name = profile.engine_id.upper()
+                    is_cloned = profile.is_cloned
+            except Exception:
+                pass
+
+        # 폴백: 레거시 설정에서 이름 가져오기
+        if voice_name is None:
+            speaker = settings.get('speaker', 'vdain')
+            voice_name = self._voice_names.get(speaker, speaker)
+
+            # 엔진 표시 (voice_id 형식: "clova.vdain" 또는 "vdain")
+            if '.' in speaker:
+                engine_id, _ = speaker.split('.', 1)
+                engine_name = engine_id.upper()
+
+        # 클로닝된 음성은 아이콘 표시
+        if is_cloned:
+            self.label_voice.setText(f"🎤 {voice_name} ({engine_name})")
         else:
-            engine_name = "CLOVA"  # 기본값
-
-        self.label_voice.setText(f"{voice_name} ({engine_name})")
+            self.label_voice.setText(f"{voice_name} ({engine_name})")
 
         # 파라미터
         speed = settings.get('speed', 0)
