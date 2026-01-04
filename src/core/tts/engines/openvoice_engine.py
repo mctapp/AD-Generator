@@ -315,6 +315,8 @@ class OpenVoiceEngine(BaseTTSEngine):
     def _generate_cloned(self, request: TTSRequest) -> TTSResult:
         """클로닝된 음성으로 생성"""
         try:
+            print(f"[OpenVoice] 클로닝 음성 생성 시작: {request.voice_id}")
+
             # ToneColorConverter 로드
             if not self._load_tone_converter():
                 return TTSResult(
@@ -339,6 +341,7 @@ class OpenVoiceEngine(BaseTTSEngine):
                 )
 
             import torch
+            print(f"[OpenVoice] 음색 임베딩 로드: {se_path}")
             target_se = torch.load(se_path, map_location=self._device)
 
             # 임시 파일로 기본 음성 생성
@@ -353,23 +356,35 @@ class OpenVoiceEngine(BaseTTSEngine):
                 speed = 1.0 - (request.speed * 0.1)
                 speed = max(0.5, min(2.0, speed))
 
+                print(f"[OpenVoice] MeloTTS 음성 생성 중... (텍스트 길이: {len(request.text)}자)")
                 self._tts_model.tts_to_file(
                     request.text,
                     speaker_id,
                     tmp_path,
                     speed=speed
                 )
+                print(f"[OpenVoice] MeloTTS 음성 생성 완료: {tmp_path}")
+
+                # 임시 파일 확인
+                if not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
+                    return TTSResult(
+                        success=False,
+                        error_message="MeloTTS 음성 파일 생성 실패 (파일 없음 또는 0바이트)"
+                    )
 
                 # 소스 음색 추출 (MeloTTS 기본 음성)
                 if self._source_se is None:
+                    print("[OpenVoice] 소스 음색 추출 중...")
                     from openvoice import se_extractor
                     self._source_se, _ = se_extractor.get_se(
                         tmp_path,
                         self._tone_converter,
                         vad=False
                     )
+                    print("[OpenVoice] 소스 음색 추출 완료")
 
                 # 음색 변환
+                print("[OpenVoice] 음색 변환 중...")
                 self._tone_converter.convert(
                     audio_src_path=tmp_path,
                     src_se=self._source_se,
@@ -377,6 +392,7 @@ class OpenVoiceEngine(BaseTTSEngine):
                     output_path=request.output_path,
                     message="@MyShell"
                 )
+                print(f"[OpenVoice] 음색 변환 완료: {request.output_path}")
 
                 if os.path.exists(request.output_path):
                     return TTSResult(
@@ -386,7 +402,7 @@ class OpenVoiceEngine(BaseTTSEngine):
                 else:
                     return TTSResult(
                         success=False,
-                        error_message="음색 변환 실패"
+                        error_message="음색 변환 실패 (출력 파일 없음)"
                     )
 
             finally:
@@ -395,6 +411,9 @@ class OpenVoiceEngine(BaseTTSEngine):
                     os.remove(tmp_path)
 
         except Exception as e:
+            import traceback
+            error_detail = traceback.format_exc()
+            print(f"[OpenVoice] 클로닝 음성 생성 오류: {error_detail}")
             return TTSResult(
                 success=False,
                 error_message=f"클로닝 음성 생성 실패: {str(e)}"
