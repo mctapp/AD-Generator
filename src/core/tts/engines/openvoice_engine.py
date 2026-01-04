@@ -182,6 +182,9 @@ class OpenVoiceEngine(BaseTTSEngine):
             def __getattr__(self, name):
                 if name == 'Tagger':
                     return DummyMeCabTagger
+                # g2pkk uses mecab.MeCab() (lowercase module, uppercase class)
+                if name == 'MeCab':
+                    return DummyMeCabTagger
                 return DummyMeCab(f"{self.__name__}.{name}")
 
         # mecab 모듈 패치
