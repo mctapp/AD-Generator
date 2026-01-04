@@ -125,45 +125,93 @@ class OpenVoiceEngine(BaseTTSEngine):
         if '_mecab_patched' in dir(self):
             return
 
-        # mecab 더미 모듈 생성 (g2pkk에서 사용하는 인터페이스 구현)
+        # mecab 더미 모듈 생성 (g2pkk에서 사용하는 모든 인터페이스 구현)
         class DummyMeCabTagger:
-            """MeCab.Tagger 더미 클래스 - g2pkk 호환"""
+            """MeCab.Tagger 더미 클래스 - g2pkk/konlpy 완전 호환
+
+            g2pkk가 사용하는 mecab 인터페이스:
+            - pos(text): (형태소, 품사) 튜플 리스트 반환
+            - morphs(text): 형태소 리스트 반환
+            - nouns(text): 명사 리스트 반환
+            - parse(text): MeCab 형식 문자열 반환
+            - __call__(text): pos()와 동일
+            """
             def __init__(self, *args, **kwargs):
                 pass
 
-            def __call__(self, text):
-                """g2pkk에서 self.mecab(text) 형태로 호출 시 (token, pos) 튜플 리스트 반환"""
-                if not text or not text.strip():
+            def _tokenize(self, text):
+                """텍스트를 (형태소, 품사) 튜플 리스트로 변환
+
+                한글은 문자별로 분리하고, 영문/숫자/특수문자는 연속된 것끼리 묶음
+                """
+                if not text:
                     return []
 
-                # 한글 문자별로 분리하여 (token, pos) 튜플 리스트 반환
+                import re
                 tokens = []
-                for char in text:
-                    if char.strip():
-                        # (단어, 품사) 형태로 반환
-                        tokens.append((char, "NNG"))
+
+                # 한글, 영문, 숫자, 기타로 분리
+                # 한글은 문자 단위, 나머지는 연속된 것끼리 묶음
+                pattern = r'([가-힣])|([a-zA-Z]+)|(\d+)|(\s+)|(.)'
+
+                for match in re.finditer(pattern, text):
+                    hangul, alpha, digit, space, other = match.groups()
+
+                    if hangul:
+                        # 한글은 NNG(일반명사)로 태깅
+                        tokens.append((hangul, 'NNG'))
+                    elif alpha:
+                        # 영문은 SL(외국어)로 태깅
+                        tokens.append((alpha, 'SL'))
+                    elif digit:
+                        # 숫자는 SN(숫자)로 태깅
+                        tokens.append((digit, 'SN'))
+                    elif space:
+                        # 공백은 건너뜀
+                        continue
+                    elif other:
+                        # 특수문자는 SW(기호)로 태깅
+                        tokens.append((other, 'SW'))
+
                 return tokens
+
+            def pos(self, text):
+                """형태소 분석 - (형태소, 품사) 튜플 리스트 반환
+
+                g2pkk의 annotate() 함수에서 mecab.pos(string) 형태로 호출됨
+                """
+                return self._tokenize(text)
+
+            def morphs(self, text):
+                """형태소 리스트만 반환"""
+                return [token for token, _ in self._tokenize(text)]
+
+            def nouns(self, text):
+                """명사만 반환"""
+                return [token for token, pos in self._tokenize(text)
+                        if pos.startswith('N')]
+
+            def __call__(self, text):
+                """호출 시 pos()와 동일하게 동작"""
+                return self.pos(text)
 
             def parse(self, text):
                 """텍스트를 MeCab 출력 형식으로 반환
 
-                g2pkk는 이 결과를 줄 단위로 파싱하여 사용합니다.
-                형식: 단어\t품사,품사상세,...
+                형식: 형태소\t품사,품사상세,...
                 """
-                if not text or not text.strip():
+                if not text:
                     return "EOS\n"
 
-                # 한글 문자별로 분리하여 품사 태깅 (간단한 더미)
                 result_lines = []
-                for char in text:
-                    if char.strip():
-                        # NNG: 일반명사, VV: 동사, MAG: 일반부사 등
-                        # g2pkk가 기대하는 최소한의 형식
-                        result_lines.append(f"{char}\tNNG,*,*,*,*,*,*,*")
+                for token, pos in self._tokenize(text):
+                    # MeCab 출력 형식: 형태소\t품사,*,*,*,*,*,*,*
+                    result_lines.append(f"{token}\t{pos},*,*,*,*,*,*,*")
                 result_lines.append("EOS")
                 return "\n".join(result_lines)
 
             def parseToNode(self, text):
+                """노드 파싱 (사용되지 않음)"""
                 return None
 
         class DummyMeCab(types.ModuleType):
