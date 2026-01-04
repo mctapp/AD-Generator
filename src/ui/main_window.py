@@ -316,19 +316,15 @@ class MainWindow(QMainWindow):
         self.sync_tab.load_srt(srt_path)
     
     def on_preview_requested(self):
-        """미리듣기"""
+        """미리듣기 - TTSEngineManager를 통해 커스텀 음성도 지원"""
         import subprocess
         import tempfile
+        import platform
         from PyQt6.QtWidgets import QApplication
-        from ..core import TTSEngine, TTSOptions
-        
-        if not config.has_api_keys():
-            QMessageBox.warning(self, "경고", "설정에서 API 키를 먼저 입력하세요.")
-            return
-        
+
         # 현재 탭에 따라 텍스트 결정
         current_tab = self.tab_widget.currentIndex()
-        
+
         if current_tab == 1:  # SRT 탭
             entry = self.srt_batch_tab.srt_table.get_selected_entry()
             text = entry.text if entry else "안녕하세요, 테스트 음성입니다."
@@ -338,24 +334,56 @@ class MainWindow(QMainWindow):
                 text = "안녕하세요, 테스트 음성입니다."
         else:
             text = "안녕하세요, 테스트 음성입니다."
-        
-        settings = self.voice_panel.get_settings()
-        options = TTSOptions(**settings)
-        
-        engine = TTSEngine(config.client_id, config.client_secret)
-        engine.set_options(options)
-        
+
         temp_file = os.path.join(tempfile.gettempdir(), 'tomato_preview.wav')
-        
+
         self.show_status("미리듣기 생성 중...")
         QApplication.processEvents()
-        
-        if engine.generate_single(text, temp_file):
-            subprocess.run(['afplay', temp_file], check=False)
-            self.show_status("미리듣기 완료")
-        else:
-            QMessageBox.warning(self, "오류", "미리듣기 생성에 실패했습니다.")
-            self.show_status("미리듣기 실패")
+
+        # TTSEngineManager를 통해 생성 (커스텀 음성 지원)
+        try:
+            from ..core.tts import get_tts_manager
+            tts_manager = get_tts_manager()
+
+            # 현재 선택된 음성으로 생성
+            result = tts_manager.generate(text, temp_file)
+
+            if result.success:
+                # 플랫폼에 따라 재생
+                if platform.system() == 'Darwin':
+                    subprocess.run(['afplay', temp_file], check=False)
+                elif platform.system() == 'Linux':
+                    subprocess.run(['aplay', temp_file], check=False)
+                else:
+                    subprocess.run(['start', temp_file], shell=True, check=False)
+                self.show_status("미리듣기 완료")
+            else:
+                error_msg = result.error_message or "알 수 없는 오류"
+                QMessageBox.warning(self, "오류", f"미리듣기 생성에 실패했습니다.\n\n{error_msg}")
+                self.show_status("미리듣기 실패")
+
+        except Exception as e:
+            # TTSEngineManager 사용 불가 시 레거시 엔진으로 폴백
+            if not config.has_api_keys():
+                QMessageBox.warning(self, "경고", "설정에서 API 키를 먼저 입력하세요.")
+                return
+
+            from ..core import TTSEngine, TTSOptions
+            settings = self.voice_panel.get_settings()
+            options = TTSOptions(**settings)
+
+            engine = TTSEngine(config.client_id, config.client_secret)
+            engine.set_options(options)
+
+            if engine.generate_single(text, temp_file):
+                if platform.system() == 'Darwin':
+                    subprocess.run(['afplay', temp_file], check=False)
+                elif platform.system() == 'Linux':
+                    subprocess.run(['aplay', temp_file], check=False)
+                self.show_status("미리듣기 완료")
+            else:
+                QMessageBox.warning(self, "오류", "미리듣기 생성에 실패했습니다.")
+                self.show_status("미리듣기 실패")
     
     def run_integrated_workflow(self):
         """통합실행 - 대본→TTS→동기화 원클릭"""

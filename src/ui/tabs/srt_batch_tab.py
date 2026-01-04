@@ -15,6 +15,13 @@ from ...core import SRTParser, TTSEngine, TTSOptions, OverlapChecker
 from ...core import FCPXMLExporter, EDLExporter
 from ...utils import config, ms_to_filename_tc
 
+# 새 TTS 시스템
+try:
+    from ...core.tts import get_tts_manager
+    HAS_TTS_MANAGER = True
+except ImportError:
+    HAS_TTS_MANAGER = False
+
 
 class ErrorReportDialog(QDialog):
     """오류 파일 보고 다이얼로그"""
@@ -70,21 +77,39 @@ class ErrorReportDialog(QDialog):
 
 
 class TTSWorker(QThread):
-    """TTS 생성 워커 스레드"""
+    """TTS 생성 워커 스레드 - TTSEngineManager 및 레거시 엔진 지원"""
 
     progress = pyqtSignal(int, int, str)
     item_complete = pyqtSignal(int, str)  # (entry_index, status)
     finished = pyqtSignal(dict)
 
-    def __init__(self, engine, entries, wav_folder, fps, target_indices=None):
+    def __init__(self, engine, entries, wav_folder, fps, target_indices=None,
+                 tts_manager=None, api_delay=0.3):
         super().__init__()
-        self.engine = engine
+        self.engine = engine  # 레거시 TTSEngine (폴백용)
+        self.tts_manager = tts_manager  # 새 TTSEngineManager
         self.entries = entries
         self.wav_folder = wav_folder
         self.fps = fps
         self.target_indices = target_indices  # None이면 전체 처리, 리스트면 해당 인덱스만
+        self.api_delay = api_delay
         self._cancelled = False
-    
+
+    def _generate_tts(self, text: str, output_path: str) -> bool:
+        """TTS 생성 - TTSEngineManager 우선 사용, 실패 시 레거시 폴백"""
+        if self.tts_manager is not None:
+            try:
+                result = self.tts_manager.generate(text, output_path)
+                return result.success
+            except Exception:
+                pass
+
+        # 레거시 엔진 폴백
+        if self.engine is not None:
+            return self.engine.generate_single(text, output_path)
+
+        return False
+
     def run(self):
         results = {
             'success': 0,
@@ -123,7 +148,7 @@ class TTSWorker(QThread):
 
             self.progress.emit(progress_idx + 1, total, f"생성 중: {filename}")
 
-            if self.engine.generate_single(entry.text, output_path):
+            if self._generate_tts(entry.text, output_path):
                 # 생성 후 0KB 체크
                 if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
                     results['success'] += 1
@@ -140,26 +165,27 @@ class TTSWorker(QThread):
                 self.item_complete.emit(entry_idx, 'failed')
 
             if progress_idx < total - 1 and not self._cancelled:
-                self.msleep(int(self.engine.api_delay * 1000))
+                self.msleep(int(self.api_delay * 1000))
 
         self.finished.emit(results)
-    
+
     def cancel(self):
         self._cancelled = True
 
 
 class SRTBatchTab(QWidget):
     """SRT → TTS 일괄 생성 탭"""
-    
+
     request_output_folder = pyqtSignal()
     request_settings = pyqtSignal()
     status_message = pyqtSignal(str)
     generation_complete = pyqtSignal(str)  # SRT 경로 전달
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.srt_parser = SRTParser()
-        self.tts_engine = TTSEngine()
+        self.tts_engine = TTSEngine()  # 레거시 엔진 (폴백용)
+        self._tts_manager = None  # TTSEngineManager (커스텀 음성 지원)
         self.worker = None
         self.output_folder = None
         self.fps = 24
@@ -168,7 +194,16 @@ class SRTBatchTab(QWidget):
         self.last_failed_files = []
         self.last_failed_indices = []  # 실패한 항목의 인덱스
         self.current_srt_path = None
+        self._init_tts_manager()
         self.setup_ui()
+
+    def _init_tts_manager(self):
+        """TTSEngineManager 초기화"""
+        if HAS_TTS_MANAGER:
+            try:
+                self._tts_manager = get_tts_manager()
+            except Exception:
+                self._tts_manager = None
     
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -298,55 +333,83 @@ class SRTBatchTab(QWidget):
         self.output_format = fmt
     
     def set_voice_settings(self, settings: dict):
+        """음성 설정 적용 - TTSEngineManager 및 레거시 엔진 모두 지원"""
         self.voice_settings = settings  # 저장 (리포트용)
+
+        # 레거시 엔진에도 설정 적용 (폴백용)
         options = TTSOptions(**settings)
         self.tts_engine.set_options(options)
+
+        # TTSEngineManager 설정은 이미 current_settings에 반영되어 있음
+        # (TTS 설정 다이얼로그에서 직접 업데이트됨)
     
     def update_start_button(self):
         has_entries = len(self.srt_parser.entries) > 0
         has_output = self.output_folder is not None
         has_api = config.has_api_keys()
-        
-        self.btn_start.setEnabled(has_entries and has_output and has_api)
-        
-        if not has_api:
-            self.btn_start.setToolTip("설정에서 API 키를 입력하세요")
-        elif not has_entries:
+
+        # TTSEngineManager가 있고 커스텀 음성이 선택되어 있으면 API 키 불필요
+        has_tts_engine = False
+        if self._tts_manager is not None:
+            try:
+                profile = self._tts_manager.get_current_profile()
+                if profile and profile.is_cloned:
+                    # 커스텀 클로닝 음성은 API 키 불필요
+                    has_tts_engine = True
+                elif profile and profile.engine_id == 'openvoice':
+                    # OpenVoice 엔진도 API 키 불필요
+                    has_tts_engine = True
+            except Exception:
+                pass
+
+        can_start = has_entries and has_output and (has_api or has_tts_engine)
+        self.btn_start.setEnabled(can_start)
+
+        if not has_entries:
             self.btn_start.setToolTip("SRT 파일을 불러오세요")
         elif not has_output:
             self.btn_start.setToolTip("출력 폴더를 선택하세요")
+        elif not has_api and not has_tts_engine:
+            self.btn_start.setToolTip("설정에서 API 키를 입력하거나 커스텀 음성을 선택하세요")
         else:
             self.btn_start.setToolTip("")
     
     def start_generation(self):
         if not self.srt_parser.entries:
             return
-        
+
         wav_folder = os.path.join(self.output_folder, 'wav')
         os.makedirs(wav_folder, exist_ok=True)
-        
+
+        # 레거시 엔진 설정 (폴백용)
         self.tts_engine.set_credentials(config.client_id, config.client_secret)
-        self.tts_engine.api_delay = config.get('app', 'api_delay') or 0.3
-        
+        api_delay = config.get('app', 'api_delay') or 0.3
+        self.tts_engine.api_delay = api_delay
+
+        # TTSEngineManager 재초기화 (최신 설정 반영)
+        self._init_tts_manager()
+
         self.worker = TTSWorker(
             self.tts_engine,
             self.srt_parser.entries,
             wav_folder,
-            self.fps
+            self.fps,
+            tts_manager=self._tts_manager,
+            api_delay=api_delay
         )
         self.worker.progress.connect(self.on_progress)
         self.worker.item_complete.connect(self.on_item_complete)
         self.worker.finished.connect(self.on_generation_finished)
-        
+
         self.btn_start.setEnabled(False)
         self.btn_cancel.setEnabled(True)
         self.drop_zone.setEnabled(False)
         self.btn_show_errors.setVisible(False)
         self.last_failed_files = []
-        
+
         self.progress_bar.setMaximum(len(self.srt_parser.entries))
         self.progress_bar.setValue(0)
-        
+
         self.worker.start()
     
     def cancel_generation(self):
@@ -486,15 +549,22 @@ class SRTBatchTab(QWidget):
                 except:
                     pass
 
+        # 레거시 엔진 설정 (폴백용)
         self.tts_engine.set_credentials(config.client_id, config.client_secret)
-        self.tts_engine.api_delay = config.get('app', 'api_delay') or 0.3
+        api_delay = config.get('app', 'api_delay') or 0.3
+        self.tts_engine.api_delay = api_delay
+
+        # TTSEngineManager 재초기화 (최신 설정 반영)
+        self._init_tts_manager()
 
         self.worker = TTSWorker(
             self.tts_engine,
             self.srt_parser.entries,
             wav_folder,
             self.fps,
-            target_indices=self.last_failed_indices  # 실패한 인덱스만 전달
+            target_indices=self.last_failed_indices,  # 실패한 인덱스만 전달
+            tts_manager=self._tts_manager,
+            api_delay=api_delay
         )
         self.worker.progress.connect(self.on_progress)
         self.worker.item_complete.connect(self.on_item_complete)
