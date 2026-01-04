@@ -278,11 +278,30 @@ class OpenVoiceEngine(BaseTTSEngine):
             import os
             os.environ['SAFETENSORS_FAST_GPU'] = '1'
 
-            # 보안 체크 함수 패치 (torch < 2.6 환경에서 필요)
+            # 보안 체크 함수를 더미로 대체
+            def dummy_check():
+                pass
+
+            # 1. import_utils 모듈의 함수 패치
             from transformers.utils import import_utils
             if hasattr(import_utils, 'check_torch_load_is_safe'):
-                import_utils.check_torch_load_is_safe = lambda: None
-                print("[OpenVoice] transformers 보안 체크 우회 패치 적용")
+                import_utils.check_torch_load_is_safe = dummy_check
+
+            # 2. modeling_utils 모듈의 함수 패치 (이미 import된 참조도 패치)
+            from transformers import modeling_utils
+            if hasattr(modeling_utils, 'check_torch_load_is_safe'):
+                modeling_utils.check_torch_load_is_safe = dummy_check
+
+            # 3. load_state_dict 함수 내부에서 사용되는 참조도 패치
+            # modeling_utils.load_state_dict가 클로저로 check_torch_load_is_safe를 참조하므로
+            # load_state_dict 함수 자체를 패치
+            original_load_state_dict = modeling_utils.load_state_dict
+            def patched_load_state_dict(checkpoint_file, map_location="cpu", weights_only=False):
+                import torch
+                return torch.load(checkpoint_file, map_location=map_location, weights_only=weights_only)
+            modeling_utils.load_state_dict = patched_load_state_dict
+
+            print("[OpenVoice] transformers 보안 체크 우회 패치 적용")
         except Exception as e:
             print(f"[OpenVoice] transformers 패치 실패 (무시): {e}")
 
